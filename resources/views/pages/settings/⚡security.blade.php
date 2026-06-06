@@ -48,11 +48,11 @@ new #[Title('Security settings')] class extends Component {
         $this->canManageTwoFactor = Features::canManageTwoFactorAuthentication();
 
         if ($this->canManageTwoFactor) {
-            if (Fortify::confirmsTwoFactorAuthentication() && is_null(auth()->user()->two_factor_confirmed_at)) {
+            if (Fortify::confirmsTwoFactorAuthentication() && is_null(auth()->user()?->two_factor_confirmed_at)) {
                 $disableTwoFactorAuthentication(auth()->user());
             }
 
-            $this->twoFactorEnabled = auth()->user()->hasEnabledTwoFactorAuthentication();
+            $this->twoFactorEnabled = auth()->user()?->hasEnabledTwoFactorAuthentication();
             $this->requiresConfirmation = Features::optionEnabled(Features::twoFactorAuthentication(), 'confirm');
         }
 
@@ -93,7 +93,7 @@ new #[Title('Security settings')] class extends Component {
      */
     public function loadPasskeys(): void
     {
-        $this->passkeys = auth()->user()->passkeys()
+        $this->passkeys = auth()->user()?->passkeys()
             ->select(['id', 'name', 'credential', 'created_at', 'last_used_at'])
             ->latest()
             ->get()
@@ -112,7 +112,7 @@ new #[Title('Security settings')] class extends Component {
      */
     public function confirmDelete(int $passkeyId): void
     {
-        $passkey = auth()->user()->passkeys()->findOrFail($passkeyId);
+        $passkey = auth()->user()?->passkeys()->findOrFail($passkeyId);
 
         $this->deletingPasskeyId = $passkey->id;
         $this->deletingPasskeyName = $passkey->name;
@@ -128,7 +128,7 @@ new #[Title('Security settings')] class extends Component {
             return;
         }
 
-        $passkey = auth()->user()->passkeys()->findOrFail($this->deletingPasskeyId);
+        $passkey = auth()->user()?->passkeys()->findOrFail($this->deletingPasskeyId);
 
         $deletePasskey(auth()->user(), $passkey);
 

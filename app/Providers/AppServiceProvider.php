@@ -24,6 +24,11 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+
+        $this->app->booted(function () {
+            \Illuminate\Support\Facades\Route::middleware('web')
+                ->post('/broadcasting/auth', [\App\Http\Controllers\BroadcastAuthController::class, 'authenticate']);
+        });
     }
 
     /**
