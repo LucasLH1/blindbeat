@@ -68,6 +68,9 @@ jobs:
           echo "REVERB_PORT=8080" >> .env.testing
           echo "REVERB_SCHEME=http" >> .env.testing
 
+      - name: Build assets
+        run: npm run build
+
       - name: Installer les dépendances
         run: |
           composer install --no-interaction --prefer-dist --quiet
