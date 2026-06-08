@@ -1,4 +1,4 @@
-name: 🚀 Deploy BlindBeat
+name: Deploy BlindBeat
 
 on:
   push:
@@ -11,7 +11,7 @@ concurrency:
 jobs:
   # ─── Job 1 : Tests ──────────────────────────────────────────────────────────
   tests:
-    name: 🧪 Tests Pest
+    name: Tests Pest
     runs-on: ubuntu-latest
 
     services:
@@ -24,31 +24,31 @@ jobs:
         options: --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval=10s --health-timeout=5s --health-retries=3
 
     steps:
-      - name: 📥 Checkout
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 🐘 PHP 8.4
+      - name: PHP 8.4
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
           extensions: mbstring, xml, curl, zip, mysql, bcmath, intl, pcov
           coverage: pcov
 
-      - name: 📦 Cache Composer
+      - name: Cache Composer
         uses: actions/cache@v4
         with:
           path: vendor
           key: composer-${{ hashFiles('composer.lock') }}
           restore-keys: composer-
 
-      - name: 📦 Cache npm
+      - name: Cache npm
         uses: actions/cache@v4
         with:
           path: node_modules
           key: npm-${{ hashFiles('package-lock.json') }}
           restore-keys: npm-
 
-      - name: ⚙️ Environnement de test
+      - name: Environnement de test
         run: |
           cp .env.example .env.testing
           echo "APP_ENV=testing" >> .env.testing
@@ -61,63 +61,69 @@ jobs:
           echo "BROADCAST_CONNECTION=log" >> .env.testing
           echo "QUEUE_CONNECTION=sync" >> .env.testing
           echo "CACHE_STORE=array" >> .env.testing
+          echo "REVERB_APP_ID=test-app-id" >> .env.testing
+          echo "REVERB_APP_KEY=test-app-key" >> .env.testing
+          echo "REVERB_APP_SECRET=test-app-secret" >> .env.testing
+          echo "REVERB_HOST=localhost" >> .env.testing
+          echo "REVERB_PORT=8080" >> .env.testing
+          echo "REVERB_SCHEME=http" >> .env.testing
 
-      - name: 📦 Installer les dépendances
+      - name: Installer les dépendances
         run: |
           composer install --no-interaction --prefer-dist --quiet
           npm ci --silent
 
-      - name: 🔑 Générer APP_KEY
+      - name: Générer APP_KEY
         run: php artisan key:generate --env=testing
 
-      - name: 🗄️ Migrations de test
+      - name: Migrations de test
         run: php artisan migrate --env=testing --force
 
-      - name: 🧪 Lancer Pest
+      - name: Lancer Pest
         run: php artisan test --parallel --coverage --min=0
 
   # ─── Job 2 : Déploiement ────────────────────────────────────────────────────
   deploy:
-    name: 🚀 Déploiement production
+    name: Déploiement production
     runs-on: ubuntu-latest
     needs: tests  # Déploie seulement si les tests passent
     environment: production
 
     steps:
-      - name: 📥 Checkout
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 🔑 Configurer SSH
+      - name: Configurer SSH
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
 
-      - name: 🛡️ Ajouter le VPS aux known_hosts
+      - name: Ajouter le VPS aux known_hosts
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
 
-      - name: 📤 Copier le script de déploiement
+      - name: Copier le script de déploiement
         run: |
           scp scripts/deploy.sh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ secrets.VPS_APP_DIR }}/scripts/deploy.sh
 
-      - name: 🚀 Déployer sur le VPS
+      - name: Déployer sur le VPS
         run: |
           ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
             "APP_DIR=${{ secrets.VPS_APP_DIR }} bash ${{ secrets.VPS_APP_DIR }}/scripts/deploy.sh"
 
-      - name: ✅ Vérification post-déploiement
+      - name: Vérification post-déploiement
         run: |
           sleep 5
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://blindbeat.fr || echo "000")
           if [[ "$HTTP_STATUS" == "200" ]] || [[ "$HTTP_STATUS" == "302" ]]; then
-            echo "✅ Site accessible (HTTP $HTTP_STATUS)"
+            echo "Site accessible (HTTP $HTTP_STATUS)"
           else
-            echo "⚠️ HTTP $HTTP_STATUS — vérifier les logs"
+            echo "HTTP $HTTP_STATUS — vérifier les logs"
             exit 1
           fi
 
-      - name: 📣 Résumé du déploiement
+      - name: Résumé du déploiement
         if: always()
         run: |
           echo "### Déploiement BlindBeat" >> $GITHUB_STEP_SUMMARY
