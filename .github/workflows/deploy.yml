@@ -1,0 +1,127 @@
+name: 🚀 Deploy BlindBeat
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false  # Ne jamais annuler un déploiement en cours
+
+jobs:
+  # ─── Job 1 : Tests ──────────────────────────────────────────────────────────
+  tests:
+    name: 🧪 Tests Pest
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: blindbeat_test
+        ports: ['3306:3306']
+        options: --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval=10s --health-timeout=5s --health-retries=3
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🐘 PHP 8.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, xml, curl, zip, mysql, bcmath, intl, pcov
+          coverage: pcov
+
+      - name: 📦 Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-
+
+      - name: 📦 Cache npm
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: npm-
+
+      - name: ⚙️ Environnement de test
+        run: |
+          cp .env.example .env.testing
+          echo "APP_ENV=testing" >> .env.testing
+          echo "DB_CONNECTION=mariadb" >> .env.testing
+          echo "DB_HOST=127.0.0.1" >> .env.testing
+          echo "DB_PORT=3306" >> .env.testing
+          echo "DB_DATABASE=blindbeat_test" >> .env.testing
+          echo "DB_USERNAME=root" >> .env.testing
+          echo "DB_PASSWORD=root" >> .env.testing
+          echo "BROADCAST_CONNECTION=log" >> .env.testing
+          echo "QUEUE_CONNECTION=sync" >> .env.testing
+          echo "CACHE_STORE=array" >> .env.testing
+
+      - name: 📦 Installer les dépendances
+        run: |
+          composer install --no-interaction --prefer-dist --quiet
+          npm ci --silent
+
+      - name: 🔑 Générer APP_KEY
+        run: php artisan key:generate --env=testing
+
+      - name: 🗄️ Migrations de test
+        run: php artisan migrate --env=testing --force
+
+      - name: 🧪 Lancer Pest
+        run: php artisan test --parallel --coverage --min=0
+
+  # ─── Job 2 : Déploiement ────────────────────────────────────────────────────
+  deploy:
+    name: 🚀 Déploiement production
+    runs-on: ubuntu-latest
+    needs: tests  # Déploie seulement si les tests passent
+    environment: production
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔑 Configurer SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: 🛡️ Ajouter le VPS aux known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: 📤 Copier le script de déploiement
+        run: |
+          scp scripts/deploy.sh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ secrets.VPS_APP_DIR }}/scripts/deploy.sh
+
+      - name: 🚀 Déployer sur le VPS
+        run: |
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "APP_DIR=${{ secrets.VPS_APP_DIR }} bash ${{ secrets.VPS_APP_DIR }}/scripts/deploy.sh"
+
+      - name: ✅ Vérification post-déploiement
+        run: |
+          sleep 5
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://blindbeat.fr || echo "000")
+          if [[ "$HTTP_STATUS" == "200" ]] || [[ "$HTTP_STATUS" == "302" ]]; then
+            echo "✅ Site accessible (HTTP $HTTP_STATUS)"
+          else
+            echo "⚠️ HTTP $HTTP_STATUS — vérifier les logs"
+            exit 1
+          fi
+
+      - name: 📣 Résumé du déploiement
+        if: always()
+        run: |
+          echo "### Déploiement BlindBeat" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit** : \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Message** : ${{ github.event.head_commit.message }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Auteur** : ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Date** : $(date '+%d/%m/%Y %H:%M:%S')" >> $GITHUB_STEP_SUMMARY
