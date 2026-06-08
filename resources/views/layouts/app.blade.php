@@ -7,6 +7,13 @@
 
     <title>{{ filled($title ?? null) ? $title.' — '.config('app.name') : config('app.name') }}</title>
 
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+
+    <meta name="application-name" content="BlindBeat">
+    <meta name="description" content="BlindBeat — Reconnais les titres, devance tes amis, domine le classement.">
+    <meta property="og:site_name" content="BlindBeat">
+    <meta property="og:title" content="BlindBeat — Le blindtest musical multijoueur">
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -38,9 +45,17 @@
     {{-- Navbar --}}
     <header class="sticky top-0 z-50 bg-white/80 backdrop-blur-md shadow-card" style="z-index: 50">
         <div class="mx-auto max-w-5xl px-4 sm:px-6 flex items-center justify-between h-14">
-            <a href="{{ route('home') }}" class="font-display font-black text-xl tracking-tight select-none flex items-center gap-1">
-                <span>🎵</span>
-                <span class="bg-[linear-gradient(135deg,#7C5CBF,#10B981)] bg-clip-text text-transparent">Blindtest</span>
+            <a href="{{ route('home') }}" class="select-none flex items-center gap-2">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="16" cy="16" r="16" fill="#7c5cbf"/>
+                  <rect x="7" y="14" width="3" height="8" rx="1.5" fill="white" opacity="0.5"/>
+                  <rect x="11.5" y="10" width="3" height="16" rx="1.5" fill="white" opacity="0.85"/>
+                  <rect x="16" y="7" width="3" height="22" rx="1.5" fill="white"/>
+                  <rect x="20.5" y="10" width="3" height="16" rx="1.5" fill="white" opacity="0.85"/>
+                  <circle cx="27" cy="6" r="4" fill="#a8e6cf"/>
+                  <circle cx="27" cy="6" r="2" fill="#4caf82"/>
+                </svg>
+                <span style="font-family:'Nunito',sans-serif;font-weight:800;" class="text-xl tracking-tight"><span style="color:#7c5cbf">Blind</span><span style="color:#4caf82">Beat</span></span>
             </a>
 
             <nav class="flex items-center gap-4">

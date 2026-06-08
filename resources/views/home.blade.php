@@ -7,7 +7,7 @@
         {{-- Titre --}}
         <div class="space-y-4">
             <h1 class="font-display text-6xl sm:text-7xl font-black tracking-tight leading-tight bg-[linear-gradient(135deg,#7C5CBF,#10B981)] bg-clip-text text-transparent">
-                Blindtest musical
+                BlindBeat
             </h1>
             <p class="text-lg text-muted max-w-md mx-auto leading-relaxed">
                 Reconnais les titres, devance tes amis, domine le classement.

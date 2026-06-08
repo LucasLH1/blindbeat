@@ -60,6 +60,22 @@
     }
 }
 
+/* ── iOS Safari : clic fiable sur éléments non-natifs ────────────────────
+   Safari iOS ne déclenche `click` sur un élément non-interactif (div, label)
+   que s'il a `cursor: pointer`. On le force globalement sur les <label> et
+   tout élément piloté par Alpine, et on retire le flash de tap gris. */
+label {
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+[x-data],
+[x-on\:click],
+[wire\:click] {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+
 [data-flux-field]:not(ui-radio, ui-checkbox) {
     @apply grid gap-2;
 }
