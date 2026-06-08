@@ -1,6 +1,6 @@
 Crée un fichier CLAUDE.md à la racine du projet avec ce contenu exact :
 
-# Blindtest — contexte projet
+# BlindBeat — contexte projet
 
 ## Stack
 - Laravel 13, Livewire 3, Alpine.js, Tailwind CSS

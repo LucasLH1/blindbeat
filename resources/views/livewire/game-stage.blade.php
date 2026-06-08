@@ -18,7 +18,18 @@
 
     {{-- Header --}}
     <div class="flex items-center justify-between">
-        <h1 class="font-display text-2xl font-black text-ink">🎵 Blindtest</h1>
+        <h1 class="flex items-center gap-2 select-none">
+            <svg width="28" height="28" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="16" cy="16" r="16" fill="#7c5cbf"/>
+              <rect x="7" y="14" width="3" height="8" rx="1.5" fill="white" opacity="0.5"/>
+              <rect x="11.5" y="10" width="3" height="16" rx="1.5" fill="white" opacity="0.85"/>
+              <rect x="16" y="7" width="3" height="22" rx="1.5" fill="white"/>
+              <rect x="20.5" y="10" width="3" height="16" rx="1.5" fill="white" opacity="0.85"/>
+              <circle cx="27" cy="6" r="4" fill="#a8e6cf"/>
+              <circle cx="27" cy="6" r="2" fill="#4caf82"/>
+            </svg>
+            <span style="font-family:'Nunito',sans-serif;font-weight:800;" class="text-2xl tracking-tight"><span style="color:#7c5cbf">Blind</span><span style="color:#4caf82">Beat</span></span>
+        </h1>
         @if ($currentRound)
             <x-badge variant="primary">
                 Manche {{ $currentRound['round_number'] }} / {{ $room->total_rounds }}

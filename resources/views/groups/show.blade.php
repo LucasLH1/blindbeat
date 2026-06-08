@@ -70,12 +70,13 @@
                         @forelse ($themes as $theme)
                             @php $bg = $palette[$loop->index % count($palette)]; @endphp
                             <label
+                                for="group-theme-{{ $theme->id }}"
                                 x-data="{ checked: {{ in_array($theme->id, old('theme_ids', [])) ? 'true' : 'false' }} }"
                                 x-bind:class="checked ? 'ring-2 ring-primary scale-[1.02]' : 'ring-1 ring-transparent hover:ring-primary/30'"
                                 class="group relative flex cursor-pointer flex-col items-center gap-1.5 rounded-2xl p-3 transition-all duration-200 select-none"
-                                style="background: {{ $bg }}"
+                                style="background: {{ $bg }}; touch-action: manipulation; -webkit-tap-highlight-color: transparent;"
                             >
-                                <input type="checkbox" name="theme_ids[]" value="{{ $theme->id }}" x-model="checked" class="sr-only" />
+                                <input type="checkbox" id="group-theme-{{ $theme->id }}" name="theme_ids[]" value="{{ $theme->id }}" x-model="checked" class="sr-only" />
                                 <span x-show="checked" x-cloak class="absolute top-1.5 right-1.5 w-5 h-5 bg-primary rounded-full flex items-center justify-center text-white text-[10px] font-black leading-none">✓</span>
                                 <span class="text-3xl">{{ $theme->emoji }}</span>
                                 <span class="text-center text-xs font-semibold text-ink leading-tight">{{ $theme->name }}</span>

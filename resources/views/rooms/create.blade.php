@@ -41,15 +41,17 @@
                         @forelse ($themes as $theme)
                             @php $bg = $palette[$loop->index % count($palette)]; @endphp
                             <label
+                                for="theme-{{ $theme->id }}"
                                 x-data="{ checked: {{ in_array($theme->id, old('theme_ids', [])) ? 'true' : 'false' }} }"
                                 x-bind:class="checked
                                     ? 'ring-2 ring-primary scale-[1.02]'
                                     : 'ring-1 ring-transparent hover:ring-primary/30 hover:scale-[1.01]'"
                                 class="group relative flex cursor-pointer flex-col items-center gap-2 rounded-2xl p-4 transition-all duration-200 select-none"
-                                style="background: {{ $bg }}; touch-action: manipulation"
+                                style="background: {{ $bg }}; touch-action: manipulation; -webkit-tap-highlight-color: transparent;"
                             >
                                 <input
                                     type="checkbox"
+                                    id="theme-{{ $theme->id }}"
                                     name="theme_ids[]"
                                     value="{{ $theme->id }}"
                                     x-model="checked"
@@ -124,14 +126,16 @@
 
                 {{-- Option top_only --}}
                 <label
+                    for="top_only"
                     x-data="{ checked: {{ old('top_only') ? 'true' : 'false' }} }"
                     x-bind:class="checked ? 'ring-2 ring-primary bg-primary-light' : 'ring-1 ring-border bg-white hover:bg-zinc-50'"
                     class="flex items-center gap-3 cursor-pointer rounded-xl px-4 py-3 transition-all duration-150 select-none"
-                    style="touch-action: manipulation"
+                    style="touch-action: manipulation; -webkit-tap-highlight-color: transparent;"
                 >
                     <input type="hidden" name="top_only" value="0" />
                     <input
                         type="checkbox"
+                        id="top_only"
                         name="top_only"
                         value="1"
                         x-model="checked"
