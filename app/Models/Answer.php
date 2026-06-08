@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\AnswerType;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -15,6 +16,8 @@ class Answer extends Model
         'round_id',
         'game_player_id',
         'answer_text',
+        'answer_type',
+        'points_earned',
         'is_correct',
         'response_time_ms',
     ];
@@ -22,6 +25,8 @@ class Answer extends Model
     protected function casts(): array
     {
         return [
+            'answer_type' => AnswerType::class,
+            'points_earned' => 'integer',
             'is_correct' => 'boolean',
             'response_time_ms' => 'integer',
         ];

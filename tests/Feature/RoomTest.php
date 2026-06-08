@@ -17,10 +17,10 @@ use App\Livewire\GameStage;
 use App\Livewire\Lobby;
 use App\Models\Answer;
 use App\Models\GamePlayer;
-use App\Models\Playlist;
-use App\Models\PlaylistTrack;
 use App\Models\Room;
 use App\Models\Round;
+use App\Models\Theme;
+use App\Models\ThemeTrack;
 use App\Models\User;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
@@ -31,21 +31,16 @@ use Livewire\Livewire;
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makePlaylist(?User $user = null): Playlist
+function makeTheme(): Theme
 {
-    $user ??= User::factory()->create();
-
-    return Playlist::create([
-        'user_id' => $user->id,
-        'name' => 'Test Playlist',
-        'is_public' => true,
-    ]);
+    static $i = 0;
+    return Theme::create(['name' => 'Theme ' . (++$i), 'emoji' => '🎵']);
 }
 
-function addTrack(Playlist $playlist, int $position = 0): PlaylistTrack
+function addTrack(Theme $theme, int $position = 0): ThemeTrack
 {
-    return PlaylistTrack::create([
-        'playlist_id' => $playlist->id,
+    return ThemeTrack::create([
+        'theme_id' => $theme->id,
         'deezer_track_id' => random_int(1, 999999),
         'title' => 'Track ' . $position,
         'artist' => 'Artist',
@@ -54,16 +49,21 @@ function addTrack(Playlist $playlist, int $position = 0): PlaylistTrack
     ]);
 }
 
-function makeWaitingRoom(Playlist $playlist, int $maxPlayers = 8): Room
+function makeWaitingRoom(array $themeIds = [], int $maxPlayers = 8): Room
 {
-    return Room::create([
-        'playlist_id' => $playlist->id,
-        'code' => strtoupper(substr(md5(uniqid()), 0, 6)),
+    static $i = 0;
+    $code = strtoupper(substr(md5('room' . (++$i)), 0, 6));
+    $room = Room::create([
+        'code' => $code,
         'status' => RoomStatus::Waiting,
         'max_players' => $maxPlayers,
         'round_duration' => 30,
         'total_rounds' => 10,
     ]);
+    if ($themeIds) {
+        $room->themes()->attach($themeIds);
+    }
+    return $room;
 }
 
 // ---------------------------------------------------------------------------
@@ -71,9 +71,9 @@ function makeWaitingRoom(Playlist $playlist, int $maxPlayers = 8): Room
 // ---------------------------------------------------------------------------
 
 test('CreateRoomAction crée un GamePlayer guest si user=null', function () {
-    $playlist = makePlaylist();
+    $theme = makeTheme();
 
-    $hostPlayer = (new CreateRoomAction)->execute(null, $playlist, ['guest_name' => 'HostGuest']);
+    $hostPlayer = (new CreateRoomAction)->execute(null, [$theme->id], ['guest_name' => 'HostGuest']);
 
     expect($hostPlayer->user_id)->toBeNull()
         ->and($hostPlayer->guest_name)->toBe('HostGuest')
@@ -82,9 +82,9 @@ test('CreateRoomAction crée un GamePlayer guest si user=null', function () {
 
 test('CreateRoomAction crée une Room et un GamePlayer host', function () {
     $user = User::factory()->create();
-    $playlist = makePlaylist($user);
+    $theme = makeTheme();
 
-    $hostPlayer = (new CreateRoomAction)->execute($user, $playlist, []);
+    $hostPlayer = (new CreateRoomAction)->execute($user, [$theme->id], []);
 
     expect($hostPlayer)->toBeInstanceOf(GamePlayer::class)
         ->and($hostPlayer->user_id)->toBe($user->id)
@@ -97,20 +97,22 @@ test('CreateRoomAction crée une Room et un GamePlayer host', function () {
 
 test('CreateRoomAction retourne le GamePlayer avec la relation room chargée', function () {
     $user = User::factory()->create();
-    $playlist = makePlaylist($user);
+    $theme = makeTheme();
 
-    $hostPlayer = (new CreateRoomAction)->execute($user, $playlist, []);
+    $hostPlayer = (new CreateRoomAction)->execute($user, [$theme->id], []);
 
     expect($hostPlayer->relationLoaded('room'))->toBeTrue()
-        ->and($hostPlayer->room->playlist_id)->toBe($playlist->id)
         ->and($hostPlayer->room->status)->toBe(RoomStatus::Waiting);
+
+    $hostPlayer->room->load('themes');
+    expect($hostPlayer->room->themes->contains('id', $theme->id))->toBeTrue();
 });
 
 test('CreateRoomAction applique les params max_players, round_duration, total_rounds', function () {
     $user = User::factory()->create();
-    $playlist = makePlaylist($user);
+    $theme = makeTheme();
 
-    $hostPlayer = (new CreateRoomAction)->execute($user, $playlist, [
+    $hostPlayer = (new CreateRoomAction)->execute($user, [$theme->id], [
         'max_players' => 4,
         'round_duration' => 20,
         'total_rounds' => 5,
@@ -126,8 +128,7 @@ test('CreateRoomAction applique les params max_players, round_duration, total_ro
 // ---------------------------------------------------------------------------
 
 test('JoinRoomAction crée un GamePlayer anonyme', function () {
-    $playlist = makePlaylist();
-    $room = makeWaitingRoom($playlist);
+    $room = makeWaitingRoom();
 
     $player = (new JoinRoomAction)->execute($room, null, 'GuestUser');
 
@@ -137,18 +138,27 @@ test('JoinRoomAction crée un GamePlayer anonyme', function () {
         ->and($player->status)->toBe(GamePlayerStatus::Active);
 });
 
-test('JoinRoomAction lève DomainException si room pas en waiting', function () {
-    $playlist = makePlaylist();
-    $room = makeWaitingRoom($playlist);
+test('JoinRoomAction autorise de rejoindre une room en cours (playing)', function () {
+    $room = makeWaitingRoom();
     $room->update(['status' => RoomStatus::Playing]);
+
+    $player = (new JoinRoomAction)->execute($room->fresh(), null, 'LateGuest');
+
+    expect($player)->toBeInstanceOf(GamePlayer::class)
+        ->and($player->guest_name)->toBe('LateGuest')
+        ->and($player->status)->toBe(GamePlayerStatus::Active);
+});
+
+test('JoinRoomAction lève DomainException si room terminée (finished)', function () {
+    $room = makeWaitingRoom();
+    $room->update(['status' => RoomStatus::Finished]);
 
     expect(fn () => (new JoinRoomAction)->execute($room->fresh(), null, 'Guest'))
         ->toThrow(\DomainException::class, 'Room not available');
 });
 
 test('JoinRoomAction lève DomainException si room pleine', function () {
-    $playlist = makePlaylist();
-    $room = makeWaitingRoom($playlist, maxPlayers: 1);
+    $room = makeWaitingRoom(maxPlayers: 1);
 
     GamePlayer::create([
         'room_id' => $room->id,
@@ -169,10 +179,10 @@ test('JoinRoomAction lève DomainException si room pleine', function () {
 
 test('store stocke game_player_id en session et redirige vers rooms.lobby', function () {
     $user = User::factory()->create();
-    $playlist = makePlaylist($user);
+    $theme = makeTheme();
 
     $response = $this->actingAs($user)->post(route('rooms.store'), [
-        'playlist_id' => $playlist->id,
+        'theme_ids' => [$theme->id],
     ]);
 
     $response->assertSessionHas('game_player_id');
@@ -182,10 +192,10 @@ test('store stocke game_player_id en session et redirige vers rooms.lobby', func
 });
 
 test('store crée une room guest si non authentifié avec un pseudo', function () {
-    $playlist = makePlaylist();
+    $theme = makeTheme();
 
     $response = $this->post(route('rooms.store'), [
-        'playlist_id' => $playlist->id,
+        'theme_ids' => [$theme->id],
         'guest_name' => 'GuestHost',
     ]);
 
@@ -200,10 +210,17 @@ test('store crée une room guest si non authentifié avec un pseudo', function (
 });
 
 test('store échoue si non authentifié et pas de pseudo', function () {
-    $playlist = makePlaylist();
+    $theme = makeTheme();
 
-    $this->post(route('rooms.store'), ['playlist_id' => $playlist->id])
+    $this->post(route('rooms.store'), ['theme_ids' => [$theme->id]])
         ->assertSessionHasErrors('guest_name');
+});
+
+test('store échoue si aucun thème sélectionné', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)->post(route('rooms.store'), ['theme_ids' => []])
+        ->assertSessionHasErrors('theme_ids');
 });
 
 // ---------------------------------------------------------------------------
@@ -211,8 +228,7 @@ test('store échoue si non authentifié et pas de pseudo', function () {
 // ---------------------------------------------------------------------------
 
 test('join stocke game_player_id en session et redirige vers rooms.lobby', function () {
-    $playlist = makePlaylist();
-    $room = makeWaitingRoom($playlist);
+    $room = makeWaitingRoom();
 
     $response = $this->post(route('rooms.join.post'), [
         'code' => $room->code,
@@ -224,8 +240,7 @@ test('join stocke game_player_id en session et redirige vers rooms.lobby', funct
 });
 
 test('join échoue si guest_name absent et non authentifié', function () {
-    $playlist = makePlaylist();
-    $room = makeWaitingRoom($playlist);
+    $room = makeWaitingRoom();
 
     $this->post(route('rooms.join.post'), ['code' => $room->code])
         ->assertSessionHasErrors('guest_name');
@@ -233,8 +248,7 @@ test('join échoue si guest_name absent et non authentifié', function () {
 
 test('join fonctionne sans guest_name si authentifié', function () {
     $user = User::factory()->create();
-    $playlist = makePlaylist($user);
-    $room = makeWaitingRoom($playlist);
+    $room = makeWaitingRoom();
 
     $response = $this->actingAs($user)->post(route('rooms.join.post'), [
         'code' => $room->code,
@@ -249,17 +263,15 @@ test('join fonctionne sans guest_name si authentifié', function () {
 // ---------------------------------------------------------------------------
 
 test('lobby redirige vers /join?code= si pas de session', function () {
-    $playlist = makePlaylist();
-    $room = makeWaitingRoom($playlist);
+    $room = makeWaitingRoom();
 
     $this->get(route('rooms.lobby', $room->code))
         ->assertRedirect(route('rooms.join', ['code' => $room->code]));
 });
 
 test('lobby redirige vers /join si session appartient à une autre room', function () {
-    $playlist = makePlaylist();
-    $room1 = makeWaitingRoom($playlist);
-    $room2 = makeWaitingRoom($playlist);
+    $room1 = makeWaitingRoom();
+    $room2 = makeWaitingRoom();
 
     $player = GamePlayer::create([
         'room_id' => $room1->id,
@@ -277,8 +289,7 @@ test('lobby redirige vers /join si session appartient à une autre room', functi
 
 test('lobby affiche la vue si session valide pour cette room', function () {
     $user = User::factory()->create();
-    $playlist = makePlaylist($user);
-    $room = makeWaitingRoom($playlist);
+    $room = makeWaitingRoom();
 
     $player = GamePlayer::create([
         'room_id' => $room->id,
@@ -298,8 +309,7 @@ test('lobby affiche la vue si session valide pour cette room', function () {
 // ---------------------------------------------------------------------------
 
 test('Lobby redirige vers /join?code= si pas de game_player_id en session', function () {
-    $playlist = makePlaylist();
-    $room = makeWaitingRoom($playlist);
+    $room = makeWaitingRoom();
 
     Livewire::test(Lobby::class, ['code' => $room->code])
         ->assertRedirect(route('rooms.join', ['code' => $room->code]));
@@ -307,8 +317,7 @@ test('Lobby redirige vers /join?code= si pas de game_player_id en session', func
 
 test('Lobby se monte correctement avec un game_player_id valide en session', function () {
     $user = User::factory()->create();
-    $playlist = makePlaylist($user);
-    $room = makeWaitingRoom($playlist);
+    $room = makeWaitingRoom();
 
     $player = GamePlayer::create([
         'room_id' => $room->id,
@@ -328,8 +337,7 @@ test('Lobby se monte correctement avec un game_player_id valide en session', fun
 test('Lobby isHost est false pour un joueur non-host', function () {
     $host = User::factory()->create();
     $guest = User::factory()->create();
-    $playlist = makePlaylist($host);
-    $room = makeWaitingRoom($playlist);
+    $room = makeWaitingRoom();
 
     GamePlayer::create([
         'room_id' => $room->id,
@@ -361,8 +369,7 @@ test('JoinRoomAction dispatche PlayerJoined sur le bon channel', function () {
     Event::fake([PlayerJoined::class]);
 
     $user = User::factory()->create();
-    $playlist = makePlaylist($user);
-    $room = makeWaitingRoom($playlist);
+    $room = makeWaitingRoom();
 
     $guest = User::factory()->create();
     (new JoinRoomAction)->execute($room, $guest, null);
@@ -375,9 +382,7 @@ test('JoinRoomAction dispatche PlayerJoined sur le bon channel', function () {
 test('JoinRoomAction dispatche PlayerJoined pour un joueur anonyme', function () {
     Event::fake([PlayerJoined::class]);
 
-    $user = User::factory()->create();
-    $playlist = makePlaylist($user);
-    $room = makeWaitingRoom($playlist);
+    $room = makeWaitingRoom();
 
     (new JoinRoomAction)->execute($room, null, 'SuperGuest');
 
@@ -388,8 +393,7 @@ test('JoinRoomAction dispatche PlayerJoined pour un joueur anonyme', function ()
 });
 
 test('PlayerJoined broadcast sur le bon canal avec le bon payload', function () {
-    $playlist = makePlaylist();
-    $room = makeWaitingRoom($playlist);
+    $room = makeWaitingRoom();
     $player = makeActivePlayer($room, guestName: 'TestPlayer');
 
     $event = new PlayerJoined($player, $room->code);
@@ -407,31 +411,24 @@ test('PlayerJoined broadcast sur le bon canal avec le bon payload', function () 
 test('StartGameAction passe la room en playing et dispatche GameStarted + RoundStarted', function () {
     Queue::fake();
     Event::fake([GameStarted::class, RoundStarted::class]);
+    Http::fake(['api.deezer.com/*' => Http::response(['preview' => 'https://cdn.deezer.com/fake.mp3', 'album' => ['cover_medium' => 'https://cdn.deezer.com/fake.jpg']])]);
 
-    $user = User::factory()->create();
-    $playlist = makePlaylist($user);
-    addTrack($playlist, 0);
+    $theme = makeTheme();
+    addTrack($theme, 0);
 
-    $room = makeWaitingRoom($playlist, maxPlayers: 8);
+    $room = makeWaitingRoom([$theme->id]);
     $room->update(['total_rounds' => 1]);
 
-    $host = GamePlayer::create([
+    GamePlayer::create([
         'room_id' => $room->id,
-        'user_id' => $user->id,
+        'user_id' => null,
+        'guest_name' => 'Host',
         'status' => GamePlayerStatus::Active,
         'score' => 0,
         'joined_at' => now()->subSecond(),
     ]);
-    GamePlayer::create([
-        'room_id' => $room->id,
-        'user_id' => null,
-        'guest_name' => 'Guest',
-        'status' => GamePlayerStatus::Active,
-        'score' => 0,
-        'joined_at' => now(),
-    ]);
 
-    app(StartGameAction::class)->execute($room->fresh(['playlist.tracks']));
+    app(StartGameAction::class)->execute($room->fresh());
 
     expect($room->fresh()->status)->toBe(RoomStatus::Playing);
     Event::assertDispatched(GameStarted::class);
@@ -439,31 +436,34 @@ test('StartGameAction passe la room en playing et dispatche GameStarted + RoundS
 });
 
 test('StartGameAction lève DomainException si room pas en waiting', function () {
-    $user = User::factory()->create();
-    $playlist = makePlaylist($user);
-    $room = makeWaitingRoom($playlist);
+    $room = makeWaitingRoom();
     $room->update(['status' => RoomStatus::Playing]);
 
     expect(fn () => app(StartGameAction::class)->execute($room->fresh()))
         ->toThrow(\DomainException::class, 'Room is not waiting');
 });
 
-test('StartGameAction lève DomainException si moins de 2 joueurs', function () {
-    $user = User::factory()->create();
-    $playlist = makePlaylist($user);
-    addTrack($playlist);
-    $room = makeWaitingRoom($playlist);
+test('StartGameAction démarre avec 1 seul joueur actif', function () {
+    Queue::fake();
+    Event::fake();
+    Http::fake(['api.deezer.com/*' => Http::response(['preview' => 'https://cdn.deezer.com/fake.mp3', 'album' => ['cover_medium' => 'https://cdn.deezer.com/fake.jpg']])]);
+
+    $theme = makeTheme();
+    addTrack($theme);
+    $room = makeWaitingRoom([$theme->id]);
 
     GamePlayer::create([
         'room_id' => $room->id,
-        'user_id' => $user->id,
+        'user_id' => null,
+        'guest_name' => 'Solo',
         'status' => GamePlayerStatus::Active,
         'score' => 0,
         'joined_at' => now(),
     ]);
 
-    expect(fn () => app(StartGameAction::class)->execute($room->fresh(['playlist.tracks'])))
-        ->toThrow(\DomainException::class, 'Not enough players');
+    app(StartGameAction::class)->execute($room->fresh());
+
+    expect($room->fresh()->status)->toBe(RoomStatus::Playing);
 });
 
 // ---------------------------------------------------------------------------
@@ -473,12 +473,13 @@ test('StartGameAction lève DomainException si moins de 2 joueurs', function () 
 test('Lobby::startGame redirige le host vers rooms.play', function () {
     Queue::fake();
     Event::fake([GameStarted::class, RoundStarted::class]);
+    Http::fake(['api.deezer.com/*' => Http::response(['preview' => 'https://cdn.deezer.com/fake.mp3', 'album' => ['cover_medium' => 'https://cdn.deezer.com/fake.jpg']])]);
 
     $user = User::factory()->create();
-    $playlist = makePlaylist($user);
-    addTrack($playlist, 0);
+    $theme = makeTheme();
+    addTrack($theme, 0);
 
-    $room = makeWaitingRoom($playlist);
+    $room = makeWaitingRoom([$theme->id]);
     $room->update(['total_rounds' => 1]);
 
     $host = GamePlayer::create([
@@ -510,9 +511,9 @@ test('Lobby::startGame ne fait rien pour un non-host', function () {
     Event::fake([GameStarted::class, RoundStarted::class]);
 
     $user = User::factory()->create();
-    $playlist = makePlaylist($user);
-    addTrack($playlist, 0);
-    $room = makeWaitingRoom($playlist);
+    $theme = makeTheme();
+    addTrack($theme, 0);
+    $room = makeWaitingRoom([$theme->id]);
 
     GamePlayer::create([
         'room_id' => $room->id,
@@ -542,8 +543,7 @@ test('Lobby::startGame ne fait rien pour un non-host', function () {
 
 test('Lobby::mount redirige vers rooms.play si room déjà en playing', function () {
     $user = User::factory()->create();
-    $playlist = makePlaylist($user);
-    $room = makeWaitingRoom($playlist);
+    $room = makeWaitingRoom();
     $room->update(['status' => RoomStatus::Playing]);
 
     $host = GamePlayer::create([
@@ -567,12 +567,13 @@ test('Lobby::mount redirige vers rooms.play si room déjà en playing', function
 test('POST /rooms/{code}/start démarre la partie et redirige le host', function () {
     Queue::fake();
     Event::fake([GameStarted::class, RoundStarted::class]);
+    Http::fake(['api.deezer.com/*' => Http::response(['preview' => 'https://cdn.deezer.com/fake.mp3', 'album' => ['cover_medium' => 'https://cdn.deezer.com/fake.jpg']])]);
 
     $user = User::factory()->create();
-    $playlist = makePlaylist($user);
-    addTrack($playlist, 0);
+    $theme = makeTheme();
+    addTrack($theme, 0);
 
-    $room = makeWaitingRoom($playlist);
+    $room = makeWaitingRoom([$theme->id]);
     $room->update(['total_rounds' => 1]);
 
     GamePlayer::create([
@@ -602,8 +603,7 @@ test('POST /rooms/{code}/start démarre la partie et redirige le host', function
 test('POST /rooms/{code}/start retourne 403 pour un non-host', function () {
     $owner = User::factory()->create();
     $other = User::factory()->create();
-    $playlist = makePlaylist($owner);
-    $room = makeWaitingRoom($playlist);
+    $room = makeWaitingRoom();
 
     GamePlayer::create([
         'room_id' => $room->id,
@@ -641,11 +641,11 @@ function makeActivePlayer(Room $room, ?User $user = null, ?string $guestName = n
     ]);
 }
 
-function makePlayingRound(Room $room, PlaylistTrack $track): Round
+function makePlayingRound(Room $room, ThemeTrack $track): Round
 {
     return Round::create([
         'room_id' => $room->id,
-        'playlist_track_id' => $track->id,
+        'theme_track_id' => $track->id,
         'round_number' => 1,
         'status' => RoundStatus::Playing,
         'started_at' => now()->subSeconds(5),
@@ -661,13 +661,13 @@ test('StartRoundAction dispatche ScheduleRoundEnd avec le bon délai', function 
     Event::fake([RoundStarted::class]);
     Http::fake(['api.deezer.com/*' => Http::response(['preview' => 'https://cdn.deezer.com/fake.mp3', 'album' => ['cover_medium' => 'https://cdn.deezer.com/fake.jpg']])]);
 
-    $playlist = makePlaylist();
-    $track = addTrack($playlist, 0);
-    $room = makeWaitingRoom($playlist);
+    $theme = makeTheme();
+    $track = addTrack($theme, 0);
+    $room = makeWaitingRoom([$theme->id]);
 
     $round = Round::create([
         'room_id' => $room->id,
-        'playlist_track_id' => $track->id,
+        'theme_track_id' => $track->id,
         'round_number' => 1,
         'status' => RoundStatus::Waiting,
         'started_at' => null,
@@ -684,9 +684,9 @@ test('ScheduleRoundEnd déclenche EndRoundAction si round encore playing', funct
     Event::fake([RoundEnded::class]);
     Queue::fake();
 
-    $playlist = makePlaylist();
-    $track = addTrack($playlist, 0);
-    $room = makeWaitingRoom($playlist);
+    $theme = makeTheme();
+    $track = addTrack($theme, 0);
+    $room = makeWaitingRoom([$theme->id]);
     makeActivePlayer($room, offsetSeconds: 2);
     makeActivePlayer($room, guestName: 'Guest');
     $round = makePlayingRound($room, $track);
@@ -701,12 +701,12 @@ test('ScheduleRoundEnd est idempotent si round déjà revealed', function () {
     Event::fake([RoundEnded::class]);
     Queue::fake();
 
-    $playlist = makePlaylist();
-    $track = addTrack($playlist, 0);
-    $room = makeWaitingRoom($playlist);
+    $theme = makeTheme();
+    $track = addTrack($theme, 0);
+    $room = makeWaitingRoom([$theme->id]);
     $round = Round::create([
         'room_id' => $room->id,
-        'playlist_track_id' => $track->id,
+        'theme_track_id' => $track->id,
         'round_number' => 1,
         'status' => RoundStatus::Revealed,
         'started_at' => now()->subSeconds(10),
@@ -727,9 +727,9 @@ test('EvaluateAnswerAction autorise une 2e tentative si max_attempts=2 et 1ère 
     Event::fake();
     Queue::fake();
 
-    $playlist = makePlaylist();
-    $track = addTrack($playlist, 0);
-    $room = makeWaitingRoom($playlist);
+    $theme = makeTheme();
+    $track = addTrack($theme, 0);
+    $room = makeWaitingRoom([$theme->id]);
     $room->update(['max_attempts' => 2]);
 
     $player1 = makeActivePlayer($room, offsetSeconds: 2);
@@ -748,9 +748,9 @@ test('EvaluateAnswerAction autorise une 2e tentative si max_attempts=2 et 1ère 
 test('EvaluateAnswerAction lève DomainException quand max_attempts épuisées', function () {
     Queue::fake();
 
-    $playlist = makePlaylist();
-    $track = addTrack($playlist, 0);
-    $room = makeWaitingRoom($playlist);
+    $theme = makeTheme();
+    $track = addTrack($theme, 0);
+    $room = makeWaitingRoom([$theme->id]);
     $room->update(['max_attempts' => 1]);
 
     $player1 = makeActivePlayer($room, offsetSeconds: 2);
@@ -773,9 +773,9 @@ test('EvaluateAnswerAction déclenche EndRound quand tous les joueurs ont épuis
     Event::fake([RoundEnded::class]);
     Queue::fake();
 
-    $playlist = makePlaylist();
-    $track = addTrack($playlist, 0);
-    $room = makeWaitingRoom($playlist);
+    $theme = makeTheme();
+    $track = addTrack($theme, 0);
+    $room = makeWaitingRoom([$theme->id]);
     $room->update(['max_attempts' => 1]);
 
     $player1 = makeActivePlayer($room, offsetSeconds: 2);
@@ -793,9 +793,9 @@ test('EvaluateAnswerAction retourne attempts_remaining=null si max_attempts non 
     Event::fake();
     Queue::fake();
 
-    $playlist = makePlaylist();
-    $track = addTrack($playlist, 0);
-    $room = makeWaitingRoom($playlist);
+    $theme = makeTheme();
+    $track = addTrack($theme, 0);
+    $room = makeWaitingRoom([$theme->id]);
 
     $player1 = makeActivePlayer($room, offsetSeconds: 2);
     makeActivePlayer($room, guestName: 'Guest');
@@ -813,8 +813,7 @@ test('EvaluateAnswerAction retourne attempts_remaining=null si max_attempts non 
 
 test('Lobby::playerLeft passe le joueur en disconnected et rafraîchit la liste', function () {
     $user = User::factory()->create();
-    $playlist = makePlaylist($user);
-    $room = makeWaitingRoom($playlist);
+    $room = makeWaitingRoom();
 
     $host = makeActivePlayer($room, $user, offsetSeconds: 2);
     $guest = makeActivePlayer($room, guestName: 'Guest');
@@ -837,9 +836,9 @@ test('GameStage::playerLeft déclenche EndRound si tous les joueurs actifs ont r
     Http::fake(['api.deezer.com/*' => Http::response(['preview' => 'https://cdn.deezer.com/fake.mp3', 'album' => ['cover_medium' => 'https://cdn.deezer.com/fake.jpg']])]);
 
     $user = User::factory()->create();
-    $playlist = makePlaylist($user);
-    $track = addTrack($playlist, 0);
-    $room = makeWaitingRoom($playlist);
+    $theme = makeTheme();
+    $track = addTrack($theme, 0);
+    $room = makeWaitingRoom([$theme->id]);
     $room->update(['status' => RoomStatus::Playing, 'current_round_number' => 1, 'started_at' => now()]);
 
     $player1 = makeActivePlayer($room, $user, offsetSeconds: 2);
@@ -850,8 +849,17 @@ test('GameStage::playerLeft déclenche EndRound si tous les joueurs actifs ont r
         'round_id' => $round->id,
         'game_player_id' => $player1->id,
         'answer_text' => $track->title,
+        'answer_type' => 'title',
         'is_correct' => true,
         'response_time_ms' => 2000,
+    ]);
+    Answer::create([
+        'round_id' => $round->id,
+        'game_player_id' => $player1->id,
+        'answer_text' => $track->artist,
+        'answer_type' => 'artist',
+        'is_correct' => true,
+        'response_time_ms' => 3000,
     ]);
 
     session(['game_player_id' => $player1->id]);
@@ -875,9 +883,8 @@ test('POST /broadcasting/auth retourne 403 sans session', function () {
 });
 
 test('POST /broadcasting/auth retourne 403 si joueur dans une autre room', function () {
-    $playlist = makePlaylist();
-    $room1    = makeWaitingRoom($playlist);
-    $room2    = makeWaitingRoom($playlist);
+    $room1    = makeWaitingRoom();
+    $room2    = makeWaitingRoom();
 
     $player = makeActivePlayer($room1, guestName: 'Guest');
 
@@ -889,8 +896,7 @@ test('POST /broadcasting/auth retourne 403 si joueur dans une autre room', funct
 });
 
 test('POST /broadcasting/auth retourne le token Pusher pour un guest valide', function () {
-    $playlist = makePlaylist();
-    $room     = makeWaitingRoom($playlist);
+    $room     = makeWaitingRoom();
     $player   = makeActivePlayer($room, guestName: 'GuestHost');
 
     $response = $this->withSession(['game_player_id' => $player->id])
@@ -909,8 +915,7 @@ test('POST /broadcasting/auth retourne le token Pusher pour un guest valide', fu
 
 test('POST /broadcasting/auth retourne le token pour un user authentifié', function () {
     $user     = User::factory()->create();
-    $playlist = makePlaylist($user);
-    $room     = makeWaitingRoom($playlist);
+    $room     = makeWaitingRoom();
     $player   = makeActivePlayer($room, $user);
 
     $response = $this->actingAs($user)

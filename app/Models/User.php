@@ -8,8 +8,10 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
@@ -32,14 +34,16 @@ class User extends Authenticatable implements PasskeyUser
         ];
     }
 
-    public function playlists(): HasMany
-    {
-        return $this->hasMany(Playlist::class);
-    }
-
     public function gamePlayers(): HasMany
     {
         return $this->hasMany(GamePlayer::class);
+    }
+
+    public function groups(): BelongsToMany
+    {
+        return $this->belongsToMany(Group::class, 'group_members')
+            ->withPivot('role', 'joined_at')
+            ->withTimestamps();
     }
 
     public function initials(): string

@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Actions\RecordGroupScoreAction;
 use App\Actions\StartRoundAction;
 use App\Enums\RoomStatus;
 use App\Enums\RoundStatus;
@@ -25,6 +26,8 @@ class ProcessRoundEnd implements ShouldQueue
     {
         $round = $this->round->fresh();
 
+        logger()->info('ProcessRoundEnd: handling', ['round_id' => $round->id, 'status' => $round->status->value]);
+
         // Idempotency: only proceed if round is still revealed
         if ($round->status !== RoundStatus::Revealed) {
             return;
@@ -42,6 +45,7 @@ class ProcessRoundEnd implements ShouldQueue
             (new StartRoundAction)->execute($nextRound);
         } else {
             $room->update(['status' => RoomStatus::Finished]);
+            (new RecordGroupScoreAction)->execute($room);
             GameEnded::dispatch($room);
         }
     }

@@ -5,24 +5,27 @@ namespace App\Actions;
 use App\Enums\GamePlayerStatus;
 use App\Enums\RoomStatus;
 use App\Models\GamePlayer;
-use App\Models\Playlist;
 use App\Models\Room;
 use App\Models\User;
 use Illuminate\Support\Str;
 
 class CreateRoomAction
 {
-    public function execute(?User $user, Playlist $playlist, array $params): GamePlayer
+    public function execute(?User $user, array $themeIds, array $params): GamePlayer
     {
         $room = Room::create([
-            'playlist_id' => $playlist->id,
             'code' => $this->generateUniqueCode(),
             'status' => RoomStatus::Waiting,
             'max_players' => $params['max_players'] ?? 8,
             'round_duration' => $params['round_duration'] ?? 30,
             'total_rounds' => $params['total_rounds'] ?? 10,
             'max_attempts' => $params['max_attempts'] ?? null,
+            'top_only' => $params['top_only'] ?? false,
         ]);
+
+        if ($themeIds) {
+            $room->themes()->attach($themeIds);
+        }
 
         $hostPlayer = GamePlayer::create([
             'room_id' => $room->id,
@@ -33,7 +36,6 @@ class CreateRoomAction
             'joined_at' => now(),
         ]);
 
-        // Avoid extra query in callers that need room->code
         $hostPlayer->setRelation('room', $room);
 
         return $hostPlayer;

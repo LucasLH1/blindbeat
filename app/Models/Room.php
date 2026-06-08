@@ -6,7 +6,7 @@ use App\Enums\RoomStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Room extends Model
@@ -14,7 +14,6 @@ class Room extends Model
     use HasFactory, HasUuids;
 
     protected $fillable = [
-        'playlist_id',
         'code',
         'status',
         'current_round_number',
@@ -22,6 +21,7 @@ class Room extends Model
         'round_duration',
         'total_rounds',
         'max_attempts',
+        'top_only',
         'started_at',
     ];
 
@@ -34,13 +34,14 @@ class Room extends Model
             'round_duration' => 'integer',
             'total_rounds' => 'integer',
             'max_attempts' => 'integer',
+            'top_only' => 'boolean',
             'started_at' => 'datetime',
         ];
     }
 
-    public function playlist(): BelongsTo
+    public function themes(): BelongsToMany
     {
-        return $this->belongsTo(Playlist::class);
+        return $this->belongsToMany(Theme::class, 'room_themes');
     }
 
     public function gamePlayers(): HasMany
@@ -51,5 +52,10 @@ class Room extends Model
     public function rounds(): HasMany
     {
         return $this->hasMany(Round::class)->orderBy('round_number');
+    }
+
+    public function groups(): BelongsToMany
+    {
+        return $this->belongsToMany(Group::class, 'group_rooms');
     }
 }

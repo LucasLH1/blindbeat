@@ -15,7 +15,9 @@ class Round extends Model
 
     protected $fillable = [
         'room_id',
-        'playlist_track_id',
+        'theme_track_id',
+        'track_title',
+        'track_artist',
         'round_number',
         'status',
         'started_at',
@@ -37,9 +39,9 @@ class Round extends Model
         return $this->belongsTo(Room::class);
     }
 
-    public function playlistTrack(): BelongsTo
+    public function themeTrack(): BelongsTo
     {
-        return $this->belongsTo(PlaylistTrack::class);
+        return $this->belongsTo(ThemeTrack::class);
     }
 
     public function answers(): HasMany

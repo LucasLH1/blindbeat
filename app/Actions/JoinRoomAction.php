@@ -13,7 +13,7 @@ class JoinRoomAction
 {
     public function execute(Room $room, ?User $user, ?string $guestName): GamePlayer
     {
-        if ($room->status !== RoomStatus::Waiting) {
+        if ($room->status === RoomStatus::Finished) {
             throw new \DomainException('Room not available');
         }
 

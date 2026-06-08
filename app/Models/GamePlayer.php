@@ -20,6 +20,7 @@ class GamePlayer extends Model
         'status',
         'score',
         'joined_at',
+        'last_seen_at',
     ];
 
     protected function casts(): array
@@ -28,6 +29,7 @@ class GamePlayer extends Model
             'status' => GamePlayerStatus::class,
             'score' => 'integer',
             'joined_at' => 'datetime',
+            'last_seen_at' => 'datetime',
         ];
     }
 

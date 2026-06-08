@@ -2,20 +2,25 @@
 
 use App\Actions\EndRoundAction;
 use App\Actions\EvaluateAnswerAction;
+use App\Actions\StartGameAction;
 use App\Actions\StartRoundAction;
+use App\Enums\AnswerType;
 use App\Enums\GamePlayerStatus;
 use App\Enums\RoomStatus;
 use App\Enums\RoundStatus;
 use App\Events\GameEnded;
+use App\Events\PlayerAnsweredCorrectly;
+use App\Events\PlayerAnsweredWrong;
+use App\Events\RoomReplayed;
 use App\Events\RoundEnded;
 use App\Events\RoundStarted;
 use App\Jobs\ProcessRoundEnd;
 use App\Livewire\GameStage;
 use App\Models\GamePlayer;
-use App\Models\Playlist;
-use App\Models\PlaylistTrack;
 use App\Models\Room;
 use App\Models\Round;
+use App\Models\Theme;
+use App\Models\ThemeTrack;
 use App\Models\User;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
@@ -28,10 +33,9 @@ use Livewire\Livewire;
 
 function gameRoom(int $maxPlayers = 4, int $roundDuration = 30): array
 {
-    $user = User::factory()->create();
-    $playlist = Playlist::create(['user_id' => $user->id, 'name' => 'Test', 'is_public' => true]);
-    $track = PlaylistTrack::create([
-        'playlist_id' => $playlist->id,
+    $theme = Theme::create(['name' => 'Test Theme', 'emoji' => '🎵']);
+    $track = ThemeTrack::create([
+        'theme_id' => $theme->id,
         'deezer_track_id' => 1234567,
         'title' => 'Smells Like Teen Spirit',
         'artist' => 'Nirvana',
@@ -39,15 +43,15 @@ function gameRoom(int $maxPlayers = 4, int $roundDuration = 30): array
         'position' => 0,
     ]);
     $room = Room::create([
-        'playlist_id' => $playlist->id,
         'code' => 'ABCDEF',
         'status' => RoomStatus::Waiting,
         'max_players' => $maxPlayers,
         'round_duration' => $roundDuration,
         'total_rounds' => 10,
     ]);
+    $room->themes()->attach($theme->id);
 
-    return compact('user', 'playlist', 'track', 'room');
+    return compact('theme', 'track', 'room');
 }
 
 function addPlayer(Room $room, ?User $user = null, ?string $guestName = null): GamePlayer
@@ -62,22 +66,24 @@ function addPlayer(Room $room, ?User $user = null, ?string $guestName = null): G
     ]);
 }
 
-function playingRound(Room $room, PlaylistTrack $track, int $roundNumber = 1): Round
+function playingRound(Room $room, ThemeTrack $track, int $roundNumber = 1): Round
 {
     return Round::create([
         'room_id' => $room->id,
-        'playlist_track_id' => $track->id,
+        'theme_track_id' => $track->id,
+        'track_title' => $track->title,
+        'track_artist' => $track->artist,
         'round_number' => $roundNumber,
         'status' => RoundStatus::Playing,
         'started_at' => now(),
     ]);
 }
 
-function waitingRound(Room $room, PlaylistTrack $track, int $roundNumber = 1): Round
+function waitingRound(Room $room, ThemeTrack $track, int $roundNumber = 1): Round
 {
     return Round::create([
         'room_id' => $room->id,
-        'playlist_track_id' => $track->id,
+        'theme_track_id' => $track->id,
         'round_number' => $roundNumber,
         'status' => RoundStatus::Waiting,
     ]);
@@ -99,7 +105,9 @@ test('StartRoundAction passe le round en playing et dispatche RoundStarted', fun
 
     $fresh = $round->fresh();
     expect($fresh->status)->toBe(RoundStatus::Playing)
-        ->and($fresh->started_at)->not->toBeNull();
+        ->and($fresh->started_at)->not->toBeNull()
+        ->and($fresh->track_title)->toBe('Smells Like Teen Spirit')
+        ->and($fresh->track_artist)->toBe('Nirvana');
 
     expect($room->fresh()->current_round_number)->toBe(1);
 
@@ -107,18 +115,62 @@ test('StartRoundAction passe le round en playing et dispatche RoundStarted', fun
 });
 
 // ---------------------------------------------------------------------------
+// StartGameAction
+// ---------------------------------------------------------------------------
+
+test('StartGameAction démarre avec 1 seul joueur actif', function () {
+    Queue::fake();
+    Event::fake();
+    Http::fake(['api.deezer.com/*' => Http::response(['preview' => 'https://cdn.deezer.com/fake.mp3', 'album' => ['cover_medium' => 'https://cdn.deezer.com/fake.jpg']])]);
+
+    ['room' => $room] = gameRoom();
+    addPlayer($room);
+
+    app(StartGameAction::class)->execute($room->fresh());
+
+    expect($room->fresh()->status)->toBe(RoomStatus::Playing);
+});
+
+test('StartGameAction déduplique les tracks entre thèmes', function () {
+    Queue::fake();
+    Event::fake();
+    Http::fake(['api.deezer.com/*' => Http::response(['preview' => 'https://cdn.deezer.com/fake.mp3', 'album' => ['cover_medium' => 'https://cdn.deezer.com/fake.jpg']])]);
+
+    $theme1 = Theme::create(['name' => 'Theme A', 'emoji' => '🅰️']);
+    $theme2 = Theme::create(['name' => 'Theme B', 'emoji' => '🅱️']);
+
+    // Same deezer_track_id in both themes
+    ThemeTrack::create(['theme_id' => $theme1->id, 'deezer_track_id' => 111, 'title' => 'Track 1', 'artist' => 'Artist', 'preview_url' => 'https://x.com/1.mp3', 'position' => 0]);
+    ThemeTrack::create(['theme_id' => $theme2->id, 'deezer_track_id' => 111, 'title' => 'Track 1', 'artist' => 'Artist', 'preview_url' => 'https://x.com/1.mp3', 'position' => 0]);
+    ThemeTrack::create(['theme_id' => $theme1->id, 'deezer_track_id' => 222, 'title' => 'Track 2', 'artist' => 'Artist', 'preview_url' => 'https://x.com/2.mp3', 'position' => 1]);
+
+    $room = Room::create(['code' => 'DEDUP1', 'status' => RoomStatus::Waiting, 'max_players' => 4, 'round_duration' => 30, 'total_rounds' => 5]);
+    $room->themes()->attach([$theme1->id, $theme2->id]);
+    addPlayer($room);
+
+    app(StartGameAction::class)->execute($room->fresh());
+
+    // Only 2 unique tracks → only 2 rounds created (total_rounds=5 but only 2 available)
+    expect($room->rounds()->count())->toBe(2);
+});
+
+// ---------------------------------------------------------------------------
 // EvaluateAnswerAction
 // ---------------------------------------------------------------------------
 
-test('réponse correcte (titre) rapporte >= 1000 points', function () {
+test('réponse correcte (titre) rapporte >= 500 points', function () {
     ['room' => $room, 'track' => $track] = gameRoom();
     $player = addPlayer($room);
+    addPlayer($room, guestName: 'Other'); // keep 2 active players so round doesn't end
     $round = playingRound($room, $track);
 
     $result = (new EvaluateAnswerAction)->execute($player, $round, 'Smells Like Teen Spirit');
 
     expect($result['correct'])->toBeTrue()
-        ->and($result['points_earned'])->toBeGreaterThanOrEqual(1000);
+        ->and($result['answer_type'])->toBe('title')
+        ->and($result['found_title'])->toBeTrue()
+        ->and($result['found_artist'])->toBeFalse()
+        ->and($result['points_earned'])->toBeGreaterThanOrEqual(500);
 
     expect($player->fresh()->score)->toBe($result['points_earned']);
 });
@@ -126,14 +178,38 @@ test('réponse correcte (titre) rapporte >= 1000 points', function () {
 test('réponse correcte (artiste) est acceptée', function () {
     ['room' => $room, 'track' => $track] = gameRoom();
     $player = addPlayer($room);
+    addPlayer($room, guestName: 'Other');
     $round = playingRound($room, $track);
 
     $result = (new EvaluateAnswerAction)->execute($player, $round, 'nirvana');
 
-    expect($result['correct'])->toBeTrue();
+    expect($result['correct'])->toBeTrue()
+        ->and($result['answer_type'])->toBe('artist')
+        ->and($result['found_artist'])->toBeTrue()
+        ->and($result['found_title'])->toBeFalse();
 });
 
-test('réponse incorrecte rapporte 0 points', function () {
+test('les deux réponses correctes donnent des points cumulés', function () {
+    ['room' => $room, 'track' => $track] = gameRoom();
+    $player = addPlayer($room);
+    addPlayer($room, guestName: 'Other'); // prevent EndRound after finding both
+    $round = playingRound($room, $track);
+
+    $titleResult  = (new EvaluateAnswerAction)->execute($player, $round, 'Smells Like Teen Spirit');
+    $artistResult = (new EvaluateAnswerAction)->execute($player, $round, 'nirvana');
+
+    expect($titleResult['correct'])->toBeTrue()
+        ->and($artistResult['correct'])->toBeTrue()
+        ->and($artistResult['found_title'])->toBeTrue()
+        ->and($artistResult['found_artist'])->toBeTrue();
+
+    $totalPoints = $titleResult['points_earned'] + $artistResult['points_earned'];
+    expect($player->fresh()->score)->toBe($totalPoints);
+});
+
+test('réponse incorrecte rapporte 0 points et dispatche PlayerAnsweredWrong', function () {
+    Event::fake([PlayerAnsweredWrong::class]);
+
     ['room' => $room, 'track' => $track] = gameRoom();
     $player = addPlayer($room);
     $round = playingRound($room, $track);
@@ -143,6 +219,10 @@ test('réponse incorrecte rapporte 0 points', function () {
     expect($result['correct'])->toBeFalse()
         ->and($result['points_earned'])->toBe(0)
         ->and($player->fresh()->score)->toBe(0);
+
+    Event::assertDispatched(PlayerAnsweredWrong::class, function ($e) use ($player) {
+        return $e->gamePlayer->id === $player->id && $e->answerText === 'Wrong Answer';
+    });
 });
 
 test('bonus vitesse diminue avec le temps de réponse', function () {
@@ -150,10 +230,11 @@ test('bonus vitesse diminue avec le temps de réponse', function () {
     $player1 = addPlayer($room, guestName: 'Fast');
     $player2 = addPlayer($room, guestName: 'Slow');
 
-    // Fast player answers immediately
     $round = Round::create([
         'room_id' => $room->id,
-        'playlist_track_id' => $track->id,
+        'theme_track_id' => $track->id,
+        'track_title' => $track->title,
+        'track_artist' => $track->artist,
         'round_number' => 1,
         'status' => RoundStatus::Playing,
         'started_at' => now()->subMilliseconds(100),
@@ -161,15 +242,11 @@ test('bonus vitesse diminue avec le temps de réponse', function () {
 
     $fastResult = (new EvaluateAnswerAction)->execute($player1, $round, 'Smells Like Teen Spirit');
 
-    // Simulate late answer by adjusting started_at (mock late response)
-    $round->update(['started_at' => now()->subSeconds(25)]);
-    $round->refresh();
-
-    // Manually create a 2nd player answer without triggering EndRound
-    // (use separate round to isolate)
     $round2 = Round::create([
         'room_id' => $room->id,
-        'playlist_track_id' => $track->id,
+        'theme_track_id' => $track->id,
+        'track_title' => $track->title,
+        'track_artist' => $track->artist,
         'round_number' => 2,
         'status' => RoundStatus::Playing,
         'started_at' => now()->subSeconds(25),
@@ -180,10 +257,9 @@ test('bonus vitesse diminue avec le temps de réponse', function () {
 });
 
 test('réponse normalisée ignore les accents', function () {
-    $user = User::factory()->create();
-    $playlist = Playlist::create(['user_id' => $user->id, 'name' => 'Test', 'is_public' => true]);
-    $track = PlaylistTrack::create([
-        'playlist_id' => $playlist->id,
+    $theme = Theme::create(['name' => 'Accents', 'emoji' => '🎵']);
+    $track = ThemeTrack::create([
+        'theme_id' => $theme->id,
         'deezer_track_id' => 999,
         'title' => 'Déjà Vu',
         'artist' => 'Beyoncé',
@@ -191,14 +267,15 @@ test('réponse normalisée ignore les accents', function () {
         'position' => 0,
     ]);
     $room = Room::create([
-        'playlist_id' => $playlist->id,
         'code' => 'XYZABC',
         'status' => RoomStatus::Waiting,
         'max_players' => 4,
         'round_duration' => 30,
         'total_rounds' => 10,
     ]);
+    $room->themes()->attach($theme->id);
     $player = addPlayer($room);
+    addPlayer($room, guestName: 'Other');
     $round = playingRound($room, $track);
 
     $result = (new EvaluateAnswerAction)->execute($player, $round, 'deja vu');
@@ -211,8 +288,12 @@ test('double réponse correcte lève DomainException', function () {
     addPlayer($room, guestName: 'Other'); // prevent EndRound
     $round = playingRound($room, $track);
 
+    // Find title
     (new EvaluateAnswerAction)->execute($player, $round, 'Smells Like Teen Spirit');
+    // Find artist
+    (new EvaluateAnswerAction)->execute($player, $round, 'nirvana');
 
+    // Third attempt → both already found
     expect(fn () => (new EvaluateAnswerAction)->execute($player, $round, 'Another Answer'))
         ->toThrow(\DomainException::class, 'Already answered correctly');
 });
@@ -234,7 +315,9 @@ test('dernier joueur qui répond déclenche EndRoundAction (ProcessRoundEnd disp
     $player = addPlayer($room);
     $round = playingRound($room, $track);
 
+    // Player must find both title AND artist to be "done"
     (new EvaluateAnswerAction)->execute($player, $round, 'Smells Like Teen Spirit');
+    (new EvaluateAnswerAction)->execute($player, $round, 'nirvana');
 
     Queue::assertPushed(ProcessRoundEnd::class);
     Event::assertDispatched(RoundEnded::class);
@@ -268,13 +351,13 @@ test('EndRoundAction est idempotente si round déjà revealed', function () {
     ['room' => $room, 'track' => $track] = gameRoom();
     $round = Round::create([
         'room_id' => $room->id,
-        'playlist_track_id' => $track->id,
+        'theme_track_id' => $track->id,
         'round_number' => 1,
         'status' => RoundStatus::Revealed,
         'started_at' => now(),
     ]);
 
-    (new EndRoundAction)->execute($round); // Should be a no-op
+    (new EndRoundAction)->execute($round);
 
     Event::assertNotDispatched(RoundEnded::class);
     Queue::assertNothingPushed();
@@ -292,7 +375,7 @@ test('ProcessRoundEnd démarre la manche suivante', function () {
     ['room' => $room, 'track' => $track] = gameRoom();
     $round1 = Round::create([
         'room_id' => $room->id,
-        'playlist_track_id' => $track->id,
+        'theme_track_id' => $track->id,
         'round_number' => 1,
         'status' => RoundStatus::Revealed,
         'started_at' => now(),
@@ -313,7 +396,7 @@ test('ProcessRoundEnd termine la partie si pas de round suivant', function () {
     ['room' => $room, 'track' => $track] = gameRoom();
     $round = Round::create([
         'room_id' => $room->id,
-        'playlist_track_id' => $track->id,
+        'theme_track_id' => $track->id,
         'round_number' => 1,
         'status' => RoundStatus::Revealed,
         'started_at' => now(),
@@ -333,7 +416,7 @@ test('ProcessRoundEnd est idempotente si round déjà finished', function () {
     ['room' => $room, 'track' => $track] = gameRoom();
     $round = Round::create([
         'room_id' => $room->id,
-        'playlist_track_id' => $track->id,
+        'theme_track_id' => $track->id,
         'round_number' => 1,
         'status' => RoundStatus::Finished,
         'started_at' => now(),
@@ -352,6 +435,7 @@ test('ProcessRoundEnd est idempotente si round déjà finished', function () {
 test('AnswerController stocke la réponse et retourne JSON', function () {
     ['room' => $room, 'track' => $track] = gameRoom();
     $player = addPlayer($room);
+    addPlayer($room, guestName: 'Other');
     $round = playingRound($room, $track);
 
     $response = $this->withSession(['game_player_id' => $player->id])
@@ -361,7 +445,10 @@ test('AnswerController stocke la réponse et retourne JSON', function () {
         ]);
 
     $response->assertOk()
-        ->assertJsonStructure(['correct', 'points_earned', 'correct_answer' => ['title', 'artist']]);
+        ->assertJsonStructure(['correct', 'points_earned', 'found_title', 'found_artist'])
+        ->assertJsonPath('correct', true)
+        ->assertJsonPath('found_title', true)
+        ->assertJsonPath('found_artist', false);
 });
 
 test('AnswerController rejette si pas de session', function () {
@@ -385,17 +472,23 @@ test('AnswerController rejette si round non en playing', function () {
     $response->assertStatus(422);
 });
 
-test('AnswerController rejette la double réponse après une réponse correcte', function () {
+test('AnswerController rejette la double réponse après avoir trouvé les deux', function () {
     ['room' => $room, 'track' => $track] = gameRoom(maxPlayers: 4);
     $player = addPlayer($room);
     addPlayer($room, guestName: 'Other'); // prevent EndRound
     $round = playingRound($room, $track);
 
+    // Submit title
     $this->withSession(['game_player_id' => $player->id])
         ->postJson('/api/answers', ['answer_text' => 'Smells Like Teen Spirit', 'room_code' => $room->code]);
 
+    // Submit artist
+    $this->withSession(['game_player_id' => $player->id])
+        ->postJson('/api/answers', ['answer_text' => 'nirvana', 'room_code' => $room->code]);
+
+    // Third attempt → 422
     $response = $this->withSession(['game_player_id' => $player->id])
-        ->postJson('/api/answers', ['answer_text' => 'Second', 'room_code' => $room->code]);
+        ->postJson('/api/answers', ['answer_text' => 'Again', 'room_code' => $room->code]);
 
     $response->assertStatus(422)
         ->assertJsonPath('error', 'Already answered correctly');
@@ -448,4 +541,225 @@ test('GameStage se monte en état finished si room terminée', function () {
 
     Livewire::test(GameStage::class, ['code' => $room->code])
         ->assertSet('state', 'finished');
+});
+
+// ---------------------------------------------------------------------------
+// PlayerAnsweredCorrectly
+// ---------------------------------------------------------------------------
+
+test('EvaluateAnswerAction dispatche PlayerAnsweredCorrectly sur bonne réponse', function () {
+    Event::fake([PlayerAnsweredCorrectly::class]);
+    Queue::fake();
+
+    ['room' => $room, 'track' => $track] = gameRoom();
+    $room->update(['status' => RoomStatus::Playing]);
+    $player = addPlayer($room);
+    addPlayer($room, guestName: 'Other');
+    $round = playingRound($room, $track);
+
+    (new EvaluateAnswerAction)->execute($player, $round, 'Smells Like Teen Spirit');
+
+    Event::assertDispatched(PlayerAnsweredCorrectly::class, function ($e) use ($player) {
+        return $e->gamePlayer->id === $player->id
+            && $e->pointsEarned > 0
+            && $e->answerType === 'title'
+            && $e->foundTitle === true
+            && $e->foundArtist === false;
+    });
+});
+
+test('EvaluateAnswerAction ne dispatche pas PlayerAnsweredCorrectly sur mauvaise réponse', function () {
+    Event::fake([PlayerAnsweredCorrectly::class]);
+    Queue::fake();
+
+    ['room' => $room, 'track' => $track] = gameRoom();
+    $room->update(['status' => RoomStatus::Playing]);
+    $player = addPlayer($room);
+    $round = playingRound($room, $track);
+
+    (new EvaluateAnswerAction)->execute($player, $round, 'Mauvaise réponse');
+
+    Event::assertNotDispatched(PlayerAnsweredCorrectly::class);
+});
+
+// ---------------------------------------------------------------------------
+// Heartbeat
+// ---------------------------------------------------------------------------
+
+test('HeartbeatController met à jour last_seen_at', function () {
+    ['room' => $room] = gameRoom();
+    $player = addPlayer($room);
+
+    $this->withSession(['game_player_id' => $player->id])
+        ->postJson('/api/heartbeat')
+        ->assertJson(['ok' => true]);
+
+    expect($player->fresh()->last_seen_at)->not->toBeNull();
+});
+
+test('HeartbeatController retourne 401 sans session', function () {
+    $this->postJson('/api/heartbeat')
+        ->assertStatus(401)
+        ->assertJson(['ok' => false]);
+});
+
+// ---------------------------------------------------------------------------
+// MarkInactivePlayers command
+// ---------------------------------------------------------------------------
+
+test('players:mark-inactive passe les joueurs inactifs en disconnected', function () {
+    ['room' => $room] = gameRoom();
+    $player = addPlayer($room);
+    $player->update(['last_seen_at' => now()->subSeconds(100)]);
+
+    $this->artisan('players:mark-inactive')->assertSuccessful();
+
+    expect($player->fresh()->status)->toBe(GamePlayerStatus::Disconnected);
+});
+
+test('players:mark-inactive ne touche pas les joueurs récents', function () {
+    ['room' => $room] = gameRoom();
+    $player = addPlayer($room);
+    $player->update(['last_seen_at' => now()->subSeconds(30)]);
+
+    $this->artisan('players:mark-inactive')->assertSuccessful();
+
+    expect($player->fresh()->status)->toBe(GamePlayerStatus::Active);
+});
+
+// ---------------------------------------------------------------------------
+// SyncThemes command
+// ---------------------------------------------------------------------------
+
+test('themes:sync crée les thèmes et insère les tracks via Deezer', function () {
+    Http::fake([
+        'api.deezer.com/chart/*' => Http::response([
+            'data' => [
+                ['id' => 111, 'title' => 'Hit 1', 'duration' => 30, 'rank' => 200000, 'preview' => 'https://cdn.deezer.com/1.mp3', 'artist' => ['name' => 'Artist A'], 'album' => ['title' => 'Album A', 'cover_medium' => 'https://cdn.deezer.com/cover1.jpg']],
+            ],
+        ]),
+        'api.deezer.com/search*' => Http::response([
+            'data' => [
+                ['id' => 222, 'title' => 'Hit 2', 'duration' => 30, 'rank' => 150000, 'preview' => 'https://cdn.deezer.com/2.mp3', 'artist' => ['name' => 'Artist B'], 'album' => ['title' => 'Album B', 'cover_medium' => 'https://cdn.deezer.com/cover2.jpg']],
+            ],
+        ]),
+    ]);
+
+    $this->artisan('themes:sync')->assertSuccessful();
+
+    expect(Theme::count())->toBe(10);
+    expect(ThemeTrack::count())->toBeGreaterThan(0);
+
+    $rap = Theme::where('name', 'Rap FR')->first();
+    expect($rap)->not->toBeNull()
+        ->and($rap->emoji)->toBe('🎤')
+        ->and($rap->deezer_genre_id)->toBe(116)
+        ->and($rap->tracks_count)->toBeGreaterThanOrEqual(0);
+});
+
+test('themes:sync filtre les tracks sans preview ou avec rank insuffisant', function () {
+    Http::fake([
+        'api.deezer.com/chart/*' => Http::response(['data' => []]),
+        'api.deezer.com/search*' => Http::response([
+            'data' => [
+                // rank trop bas (< 100 000)
+                ['id' => 1, 'title' => 'Low rank', 'duration' => 30, 'rank' => 5000, 'preview' => 'https://cdn.deezer.com/1.mp3', 'artist' => ['name' => 'A'], 'album' => ['title' => 'B', 'cover_medium' => null]],
+                // rank insuffisant (< 100 000)
+                ['id' => 4, 'title' => 'Below threshold', 'duration' => 30, 'rank' => 99999, 'preview' => 'https://cdn.deezer.com/4.mp3', 'artist' => ['name' => 'A'], 'album' => ['title' => 'B', 'cover_medium' => null]],
+                // pas de preview
+                ['id' => 2, 'title' => 'No preview', 'duration' => 30, 'rank' => 200000, 'preview' => '', 'artist' => ['name' => 'A'], 'album' => ['title' => 'B', 'cover_medium' => null]],
+                // durée trop courte
+                ['id' => 3, 'title' => 'Too short', 'duration' => 20, 'rank' => 200000, 'preview' => 'https://cdn.deezer.com/3.mp3', 'artist' => ['name' => 'A'], 'album' => ['title' => 'B', 'cover_medium' => null]],
+                // titre karaoke exclu
+                ['id' => 5, 'title' => 'Song Karaoke Version', 'duration' => 30, 'rank' => 200000, 'preview' => 'https://cdn.deezer.com/5.mp3', 'artist' => ['name' => 'A'], 'album' => ['title' => 'B', 'cover_medium' => null]],
+            ],
+        ]),
+    ]);
+
+    $this->artisan('themes:sync')->assertSuccessful();
+
+    expect(ThemeTrack::count())->toBe(0);
+});
+
+test('themes:sync marque is_top les tracks avec rank >= 500000', function () {
+    Http::fake([
+        'api.deezer.com/chart/*' => Http::response(['data' => []]),
+        'api.deezer.com/search*' => Http::response([
+            'data' => [
+                ['id' => 10, 'title' => 'Mega Hit', 'duration' => 30, 'rank' => 600000, 'preview' => 'https://cdn.deezer.com/10.mp3', 'artist' => ['name' => 'Star'], 'album' => ['title' => 'Album', 'cover_medium' => null]],
+                ['id' => 11, 'title' => 'Regular Hit', 'duration' => 30, 'rank' => 200000, 'preview' => 'https://cdn.deezer.com/11.mp3', 'artist' => ['name' => 'Artist'], 'album' => ['title' => 'Album', 'cover_medium' => null]],
+            ],
+        ]),
+    ]);
+
+    $this->artisan('themes:sync')->assertSuccessful();
+
+    expect(ThemeTrack::where('is_top', true)->count())->toBeGreaterThan(0);
+    expect(ThemeTrack::where('deezer_track_id', 10)->first()->is_top)->toBeTrue();
+    expect(ThemeTrack::where('deezer_track_id', 11)->first()->is_top)->toBeFalse();
+});
+
+test('StartGameAction respecte top_only en ne prenant que les is_top tracks', function () {
+    Queue::fake();
+    Event::fake();
+    Http::fake(['api.deezer.com/*' => Http::response(['preview' => 'https://cdn.deezer.com/fake.mp3', 'album' => ['cover_medium' => 'https://cdn.deezer.com/fake.jpg']])]);
+
+    $theme = Theme::create(['name' => 'Top Theme', 'emoji' => '⭐']);
+    ThemeTrack::create(['theme_id' => $theme->id, 'deezer_track_id' => 301, 'title' => 'Top Track', 'artist' => 'Star', 'preview_url' => 'https://x.com/top.mp3', 'position' => 0, 'is_top' => true]);
+    ThemeTrack::create(['theme_id' => $theme->id, 'deezer_track_id' => 302, 'title' => 'Regular Track', 'artist' => 'Regular', 'preview_url' => 'https://x.com/reg.mp3', 'position' => 1, 'is_top' => false]);
+
+    $room = Room::create(['code' => 'TOP001', 'status' => RoomStatus::Waiting, 'max_players' => 4, 'round_duration' => 30, 'total_rounds' => 5, 'top_only' => true]);
+    $room->themes()->attach($theme->id);
+    addPlayer($room);
+
+    app(StartGameAction::class)->execute($room->fresh());
+
+    // Only 1 is_top track available → only 1 round created
+    expect($room->rounds()->count())->toBe(1);
+    expect($room->rounds()->first()->themeTrack->deezer_track_id)->toBe(301);
+});
+
+// ---------------------------------------------------------------------------
+// Replay
+// ---------------------------------------------------------------------------
+
+test('replayGame crée une nouvelle room avec les mêmes paramètres et dispatche RoomReplayed', function () {
+    Event::fake([RoomReplayed::class]);
+
+    $theme = Theme::create(['name' => 'Replay Theme', 'emoji' => '🔄']);
+    ThemeTrack::create(['theme_id' => $theme->id, 'deezer_track_id' => 999, 'title' => 'T', 'artist' => 'A', 'preview_url' => 'https://x.com/t.mp3', 'position' => 0]);
+
+    $room = Room::create([
+        'code' => 'REPLAY',
+        'status' => RoomStatus::Finished,
+        'max_players' => 6,
+        'round_duration' => 45,
+        'total_rounds' => 8,
+        'top_only' => false,
+    ]);
+    $room->themes()->attach($theme->id);
+
+    $player = GamePlayer::create([
+        'room_id' => $room->id,
+        'guest_name' => 'Lucas',
+        'status' => GamePlayerStatus::Active,
+        'score' => 200,
+        'joined_at' => now(),
+    ]);
+
+    session(['game_player_id' => $player->id]);
+
+    Livewire::test(GameStage::class, ['code' => $room->code])
+        ->call('replayGame');
+
+    Event::assertDispatched(RoomReplayed::class, function ($e) use ($room) {
+        return $e->roomId === $room->id;
+    });
+
+    // New room created with same settings
+    $newRoom = Room::where('code', '!=', 'REPLAY')->latest()->first();
+    expect($newRoom)->not->toBeNull()
+        ->and($newRoom->max_players)->toBe(6)
+        ->and($newRoom->round_duration)->toBe(45)
+        ->and($newRoom->total_rounds)->toBe(8);
 });

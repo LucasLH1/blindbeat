@@ -2,7 +2,6 @@
 
 namespace App\Actions;
 
-use App\Enums\GamePlayerStatus;
 use App\Enums\RoomStatus;
 use App\Enums\RoundStatus;
 use App\Events\GameStarted;
@@ -19,23 +18,20 @@ class StartGameAction
             throw new \DomainException('Room is not waiting');
         }
 
-        $activePlayers = $room->gamePlayers()
-            ->where('status', GamePlayerStatus::Active)
-            ->count();
-
-        if ($activePlayers < 2) {
-            throw new \DomainException('Not enough players');
-        }
-
-        $tracks = $room->playlist->tracks()
-            ->inRandomOrder()
-            ->take($room->total_rounds)
-            ->get();
+        $tracks = $room->themes()
+            ->with('tracks')
+            ->get()
+            ->pluck('tracks')
+            ->flatten()
+            ->when($room->top_only, fn ($c) => $c->where('is_top', true))
+            ->unique('deezer_track_id')
+            ->shuffle()
+            ->take($room->total_rounds);
 
         foreach ($tracks as $index => $track) {
             Round::create([
                 'room_id' => $room->id,
-                'playlist_track_id' => $track->id,
+                'theme_track_id' => $track->id,
                 'round_number' => $index + 1,
                 'status' => RoundStatus::Waiting,
             ]);

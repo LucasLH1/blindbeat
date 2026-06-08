@@ -34,10 +34,11 @@ class RoundStarted implements ShouldBroadcastNow
         return [
             'id' => $this->round->id,
             'round_number' => $this->round->round_number,
-            'deezer_track_id' => $this->round->playlistTrack->deezer_track_id,
+            'deezer_track_id' => $this->round->themeTrack->deezer_track_id,
             'preview_url' => $this->previewUrl,
             'cover_url' => $this->coverUrl,
             'duration' => $this->round->room->round_duration,
+            'started_at_ms' => (int) ($this->round->started_at->timestamp * 1000),
         ];
     }
 }

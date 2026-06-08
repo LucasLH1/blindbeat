@@ -12,16 +12,18 @@ class StartRoundAction
 {
     public function execute(Round $round): void
     {
+        $round->load('themeTrack', 'room');
+
         $round->update([
             'status' => RoundStatus::Playing,
             'started_at' => now(),
+            'track_title' => $round->themeTrack->title,
+            'track_artist' => $round->themeTrack->artist,
         ]);
 
         $round->room->update(['current_round_number' => $round->round_number]);
 
-        $round->load('playlistTrack', 'room');
-
-        [$previewUrl, $coverUrl] = $this->fetchDeezerUrls($round->playlistTrack->deezer_track_id);
+        [$previewUrl, $coverUrl] = $this->fetchDeezerUrls($round->themeTrack->deezer_track_id);
 
         RoundStarted::dispatch($round, $previewUrl, $coverUrl);
 

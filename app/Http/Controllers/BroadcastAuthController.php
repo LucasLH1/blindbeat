@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\GamePlayerStatus;
 use App\Models\GamePlayer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -37,8 +36,7 @@ class BroadcastAuthController extends Controller
         abort_if(
             ! $player
             || ! $player->room
-            || strtoupper($player->room->code) !== strtoupper($code)
-            || $player->status !== GamePlayerStatus::Active,
+            || strtoupper($player->room->code) !== strtoupper($code),
             403
         );
 
@@ -50,7 +48,7 @@ class BroadcastAuthController extends Controller
             $channelName,
             $socketId,
             $player->id,
-            ['display_name' => $player->displayName()],
+            ['display_name' => $player->displayName(), 'id' => $player->id],
         );
 
         return response()->json(json_decode($auth, true));

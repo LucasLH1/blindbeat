@@ -8,18 +8,18 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('playlists', function (Blueprint $table) {
+        Schema::create('themes', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->foreignUuid('user_id')->constrained()->cascadeOnDelete();
             $table->string('name');
-            $table->boolean('is_public')->default(false);
+            $table->string('emoji', 10)->nullable();
+            $table->unsignedInteger('deezer_genre_id')->nullable();
+            $table->unsignedInteger('tracks_count')->default(0);
             $table->timestamps();
-            $table->softDeletes();
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('playlists');
+        Schema::dropIfExists('themes');
     }
 };

@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\GamePlayer;
+use App\Models\GroupMember;
 use App\Models\Room;
 use Illuminate\Support\Facades\Broadcast;
 
@@ -26,8 +27,17 @@ Broadcast::channel('room.{code}', function ($user, string $code) {
         return false;
     }
 
+    // Status is managed by the app (playerLeft, mount re-activation) — not enforced here.
+
     return [
-        'id'   => $player->id,
-        'info' => ['display_name' => $player->displayName()],
+        'id'           => $player->id,
+        'display_name' => $player->displayName(),
     ];
+});
+
+// Private channel per group — only members may subscribe.
+Broadcast::channel('group.{groupId}', function ($user, string $groupId) {
+    return GroupMember::where('group_id', $groupId)
+        ->where('user_id', $user->id)
+        ->exists();
 });

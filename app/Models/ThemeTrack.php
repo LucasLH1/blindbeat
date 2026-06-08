@@ -3,17 +3,16 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class PlaylistTrack extends Model
+class ThemeTrack extends Model
 {
-    use HasFactory, HasUuids;
+    use HasUuids;
 
     protected $fillable = [
-        'playlist_id',
+        'theme_id',
         'deezer_track_id',
         'title',
         'artist',
@@ -21,6 +20,8 @@ class PlaylistTrack extends Model
         'preview_url',
         'cover_url',
         'position',
+        'rank',
+        'is_top',
     ];
 
     protected function casts(): array
@@ -28,12 +29,14 @@ class PlaylistTrack extends Model
         return [
             'deezer_track_id' => 'integer',
             'position' => 'integer',
+            'rank' => 'integer',
+            'is_top' => 'boolean',
         ];
     }
 
-    public function playlist(): BelongsTo
+    public function theme(): BelongsTo
     {
-        return $this->belongsTo(Playlist::class);
+        return $this->belongsTo(Theme::class);
     }
 
     public function rounds(): HasMany

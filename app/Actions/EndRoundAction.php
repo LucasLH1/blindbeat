@@ -11,7 +11,6 @@ class EndRoundAction
 {
     public function execute(Round $round): void
     {
-        // Idempotency guard — may be called concurrently when last player answers
         if ($round->status !== RoundStatus::Playing) {
             return;
         }
@@ -21,7 +20,7 @@ class EndRoundAction
             'ended_at' => now(),
         ]);
 
-        $round->load('playlistTrack', 'answers.gamePlayer');
+        $round->load('themeTrack', 'answers.gamePlayer');
 
         RoundEnded::dispatch($round);
 

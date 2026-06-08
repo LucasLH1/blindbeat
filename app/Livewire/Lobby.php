@@ -28,7 +28,7 @@ class Lobby extends Component
     {
         $this->players = collect();
         $this->code = $code;
-        $this->room = Room::with('playlist')->where('code', $code)->firstOrFail();
+        $this->room = Room::where('code', $code)->firstOrFail();
 
         if ($this->room->status === RoomStatus::Playing) {
             $this->redirect(route('rooms.play', $this->code));
@@ -69,7 +69,7 @@ class Lobby extends Component
         }
 
         try {
-            app(StartGameAction::class)->execute($this->room->fresh(['playlist.tracks']));
+            app(StartGameAction::class)->execute($this->room->fresh());
         } catch (\DomainException) {
             return;
         }
@@ -90,6 +90,15 @@ class Lobby extends Component
     public function playerLeft(?string $playerId): void
     {
         if (! $playerId || ! $this->gamePlayerId) {
+            return;
+        }
+
+        // Once the game has started, leaving the lobby presence channel means the
+        // player is navigating to the GameStage — not an actual disconnect. The host
+        // navigates first, so other clients still on the lobby would otherwise fire
+        // playerLeft(host) and mark the host disconnected, making them vanish from the
+        // scoreboard. From `playing` onward, GameStage owns presence tracking.
+        if ($this->room->fresh()->status !== RoomStatus::Waiting) {
             return;
         }
 

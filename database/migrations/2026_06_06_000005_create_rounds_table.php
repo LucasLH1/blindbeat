@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::create('rounds', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->foreignUuid('room_id')->constrained()->cascadeOnDelete();
-            $table->foreignUuid('playlist_track_id')->constrained()->cascadeOnDelete();
+            $table->foreignUuid('theme_track_id')->constrained('theme_tracks')->cascadeOnDelete();
             $table->unsignedInteger('round_number');
             $table->string('status')->default('waiting');
             $table->timestamp('started_at')->nullable();

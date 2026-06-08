@@ -8,9 +8,9 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('playlist_tracks', function (Blueprint $table) {
+        Schema::create('theme_tracks', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->foreignUuid('playlist_id')->constrained()->cascadeOnDelete();
+            $table->foreignUuid('theme_id')->constrained()->cascadeOnDelete();
             $table->unsignedBigInteger('deezer_track_id');
             $table->string('title');
             $table->string('artist');
@@ -18,12 +18,13 @@ return new class extends Migration
             $table->string('preview_url');
             $table->string('cover_url')->nullable();
             $table->unsignedInteger('position')->default(0);
+            $table->unsignedInteger('rank')->nullable();
             $table->timestamps();
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('playlist_tracks');
+        Schema::dropIfExists('theme_tracks');
     }
 };

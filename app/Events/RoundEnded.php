@@ -2,6 +2,7 @@
 
 namespace App\Events;
 
+use App\Enums\AnswerType;
 use App\Models\Round;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
@@ -29,27 +30,38 @@ class RoundEnded implements ShouldBroadcastNow
 
     public function broadcastWith(): array
     {
-        $track = $this->round->playlistTrack;
+        $this->round->loadMissing('themeTrack', 'answers', 'room.gamePlayers');
 
-        $scores = $this->round->answers->map(fn ($answer) => [
-            'game_player_id' => $answer->game_player_id,
-            'is_correct' => $answer->is_correct,
-            'response_time_ms' => $answer->response_time_ms,
-            'points_earned' => $answer->is_correct
-                ? $answer->gamePlayer->score  // cumulative, displayed in scores panel
-                : 0,
-        ])->all();
+        $track = $this->round->themeTrack;
+
+        $results = $this->round->room->gamePlayers->map(function ($player) {
+            $playerAnswers = $this->round->answers->where('game_player_id', $player->id);
+
+            $foundTitle  = $playerAnswers->contains(fn ($a) => $a->answer_type === AnswerType::Title && $a->is_correct);
+            $foundArtist = $playerAnswers->contains(fn ($a) => $a->answer_type === AnswerType::Artist && $a->is_correct);
+            $pointsThisRound = $playerAnswers->where('is_correct', true)->sum('points_earned');
+
+            return [
+                'game_player_id'   => $player->id,
+                'display_name'     => $player->displayName(),
+                'found_title'      => $foundTitle,
+                'found_artist'     => $foundArtist,
+                'points_this_round' => $pointsThisRound,
+                'total_score'      => $player->score,
+            ];
+        })->sortByDesc('points_this_round')->values()->all();
 
         return [
-            'id' => $this->round->id,
-            'round_number' => $this->round->round_number,
+            'id'             => $this->round->id,
+            'round_number'   => $this->round->round_number,
             'correct_answer' => [
-                'title' => $track->title,
-                'artist' => $track->artist,
+                'title'           => $track->title,
+                'artist'          => $track->artist,
                 'deezer_track_id' => $track->deezer_track_id,
-                'cover_url' => $track->cover_url,
+                'cover_url'       => $track->cover_url,
             ],
-            'answers' => $scores,
+            'results' => $results,
+            'answers' => $results, // backward compat
         ];
     }
 }
