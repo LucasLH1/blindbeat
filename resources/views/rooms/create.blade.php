@@ -46,7 +46,7 @@
                                     ? 'ring-2 ring-primary scale-[1.02]'
                                     : 'ring-1 ring-transparent hover:ring-primary/30 hover:scale-[1.01]'"
                                 class="group relative flex cursor-pointer flex-col items-center gap-2 rounded-2xl p-4 transition-all duration-200 select-none"
-                                style="background: {{ $bg }}"
+                                style="background: {{ $bg }}; touch-action: manipulation"
                             >
                                 <input
                                     type="checkbox"
@@ -59,7 +59,7 @@
                                 <span
                                     x-show="checked"
                                     x-cloak
-                                    class="absolute top-1.5 right-1.5 w-5 h-5 bg-primary rounded-full flex items-center justify-center text-white text-[10px] font-black leading-none"
+                                    class="pointer-events-none absolute top-1.5 right-1.5 w-5 h-5 bg-primary rounded-full flex items-center justify-center text-white text-[10px] font-black leading-none"
                                 >✓</span>
                                 {{-- Emoji avec rotation au survol --}}
                                 <span class="inline-block text-4xl transition-transform duration-200 group-hover:rotate-[10deg]">{{ $theme->emoji }}</span>
@@ -127,6 +127,7 @@
                     x-data="{ checked: {{ old('top_only') ? 'true' : 'false' }} }"
                     x-bind:class="checked ? 'ring-2 ring-primary bg-primary-light' : 'ring-1 ring-border bg-white hover:bg-zinc-50'"
                     class="flex items-center gap-3 cursor-pointer rounded-xl px-4 py-3 transition-all duration-150 select-none"
+                    style="touch-action: manipulation"
                 >
                     <input type="hidden" name="top_only" value="0" />
                     <input
