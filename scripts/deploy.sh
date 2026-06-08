@@ -61,7 +61,7 @@ $PHP artisan view:cache
 log "Cache reconstruit"
 
 # ─── 7. Storage link ──────────────────────────────────────────────────────────
-$PHP artisan storage:link 2>/dev/null || true
+$PHP artisan storage:link --force 2>/dev/null || true
 
 # ─── 8. Permissions ───────────────────────────────────────────────────────────
 chown -R blindbeat:www-data storage bootstrap/cache
@@ -69,7 +69,7 @@ chmod -R 775 storage bootstrap/cache
 
 # ─── 9. Redémarrage Supervisor ────────────────────────────────────────────────
 info "Redémarrage des workers et Reverb..."
-supervisorctl restart blindbeat:* >/dev/null
+sudo supervisorctl restart blindbeat:* >/dev/null
 log "Supervisor redémarré"
 
 # ─── 10. Maintenance OFF ──────────────────────────────────────────────────────
