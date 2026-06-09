@@ -931,3 +931,36 @@ test('POST /broadcasting/auth retourne le token pour un user authentifié', func
     $channelData = json_decode($response->json('channel_data'), true);
     expect($channelData['user_id'])->toBe($player->id);
 });
+
+test('POST /broadcasting/auth autorise un guest sur le channel game via la session', function () {
+    $room   = makeWaitingRoom();
+    $player = makeActivePlayer($room, guestName: 'Guest');
+
+    $response = $this->withSession(['game_player_id' => $player->id])
+        ->postJson('/broadcasting/auth', [
+            'channel_name' => 'private-game.' . $room->id,
+            'socket_id'    => '123.456',
+        ]);
+
+    $response->assertOk()
+        ->assertJsonStructure(['auth']);
+});
+
+test('POST /broadcasting/auth retourne 403 sur le channel game sans session ni auth', function () {
+    $room = makeWaitingRoom();
+
+    $this->postJson('/broadcasting/auth', [
+        'channel_name' => 'private-game.' . $room->id,
+        'socket_id'    => '123.456',
+    ])->assertForbidden();
+});
+
+test('POST /broadcasting/auth retourne 403 si game_player_id en session est invalide', function () {
+    $room = makeWaitingRoom();
+
+    $this->withSession(['game_player_id' => 'nonexistent-uuid'])
+        ->postJson('/broadcasting/auth', [
+            'channel_name' => 'private-game.' . $room->id,
+            'socket_id'    => '123.456',
+        ])->assertForbidden();
+});

@@ -6,10 +6,15 @@ use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 
 return Application::configure(basePath: dirname(__DIR__))
+    // NOTE: `channels:` is intentionally omitted. Passing it triggers
+    // Broadcast::routes(), which registers the framework's default
+    // GET|POST|HEAD /broadcasting/auth route. That conflicts with our custom
+    // POST /broadcasting/auth (declared in routes/web.php) which authorises
+    // guests via the session. The channel-authorization callbacks are loaded
+    // manually in AppServiceProvider::boot() instead.
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
         commands: __DIR__.'/../routes/console.php',
-        channels: __DIR__.'/../routes/channels.php',
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {

@@ -20,8 +20,29 @@ class BroadcastAuthController extends Controller
             return $this->presenceRoomAuth($channelName, $socketId);
         }
 
-        // Other channels (private player.{id}, etc.) require standard auth
-        return response()->json(\Broadcast::auth($request));
+        // Other channels (game.{id}, player.{id}, etc.).
+        // Guests have no auth()->user() but do hold a game_player_id in session,
+        // so authorize them via the session rather than \Broadcast::auth().
+        $gamePlayerId = session('game_player_id');
+
+        if ($gamePlayerId) {
+            $player = GamePlayer::find($gamePlayerId);
+            abort_if(! $player, 403);
+
+            $cfg    = config('broadcasting.connections.reverb');
+            $pusher = new Pusher($cfg['key'], $cfg['secret'], $cfg['app_id']);
+
+            $auth = $pusher->authorizeChannel($channelName, $socketId);
+
+            return response()->json(json_decode($auth, true));
+        }
+
+        // Authenticated users without a game session (e.g. group channels).
+        if (auth()->check()) {
+            return response()->json(\Broadcast::auth($request));
+        }
+
+        abort(403);
     }
 
     private function presenceRoomAuth(string $channelName, string $socketId): JsonResponse

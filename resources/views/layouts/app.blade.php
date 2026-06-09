@@ -19,7 +19,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
-    @fluxAppearance
+    {{-- No dark mode: @fluxAppearance intentionally omitted so the pastel light theme is always applied. --}}
 </head>
 <body class="min-h-screen text-ink antialiased" style="background: linear-gradient(135deg, #EDE9FF 0%, #E8F8F0 50%, #FFF0E8 100%)">
 

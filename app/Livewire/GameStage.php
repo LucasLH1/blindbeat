@@ -263,52 +263,7 @@ class GameStage extends Component
         $this->refreshPlayers();
 
         $round = $this->room->rounds()->where('status', RoundStatus::Playing)->first();
-        if ($round) {
-            $this->checkRoundEnd($round);
-        }
-    }
-
-    private function checkRoundEnd(Round $round): void
-    {
-        $maxAttempts = $this->room->fresh()->max_attempts;
-
-        $activePlayers = $this->room->gamePlayers()
-            ->where('status', GamePlayerStatus::Active)
-            ->pluck('id');
-
-        if ($activePlayers->isEmpty()) {
-            (new EndRoundAction)->execute($round);
-            return;
-        }
-
-        $donePlayers = $activePlayers->filter(function ($playerId) use ($round, $maxAttempts) {
-            $foundTitle = $round->answers()
-                ->where('game_player_id', $playerId)
-                ->where('answer_type', AnswerType::Title->value)
-                ->where('is_correct', true)
-                ->exists();
-
-            $foundArtist = $round->answers()
-                ->where('game_player_id', $playerId)
-                ->where('answer_type', AnswerType::Artist->value)
-                ->where('is_correct', true)
-                ->exists();
-
-            if ($foundTitle && $foundArtist) {
-                return true;
-            }
-
-            if ($maxAttempts !== null) {
-                return $round->answers()
-                    ->where('game_player_id', $playerId)
-                    ->where('is_correct', false)
-                    ->count() >= $maxAttempts;
-            }
-
-            return false;
-        })->count();
-
-        if ($donePlayers >= $activePlayers->count()) {
+        if ($round && $round->shouldEnd()) {
             (new EndRoundAction)->execute($round);
         }
     }

@@ -3,7 +3,6 @@
 namespace App\Actions;
 
 use App\Enums\AnswerType;
-use App\Enums\GamePlayerStatus;
 use App\Enums\RoundStatus;
 use App\Events\PlayerAnsweredCorrectly;
 use App\Events\PlayerAnsweredWrong;
@@ -97,18 +96,8 @@ class EvaluateAnswerAction
             PlayerAnsweredWrong::dispatch($gamePlayer, $round->room_id, $answerText);
         }
 
-        $activePlayers = $round->room->gamePlayers()
-            ->where('status', GamePlayerStatus::Active)
-            ->pluck('id');
-
-        if ($activePlayers->isNotEmpty()) {
-            $donePlayers = $activePlayers->filter(
-                fn ($id) => $this->isPlayerDone($id, $round, $maxAttempts)
-            )->count();
-
-            if ($donePlayers >= $activePlayers->count()) {
-                (new EndRoundAction)->execute($round);
-            }
+        if ($round->shouldEnd()) {
+            (new EndRoundAction)->execute($round);
         }
 
         $newWrongCount      = $wrongCount + ($isCorrect ? 0 : 1);
@@ -218,33 +207,5 @@ class EvaluateAnswerAction
         $words = preg_split('/\s+/u', trim($text), -1, PREG_SPLIT_NO_EMPTY);
 
         return implode('', array_map(fn ($w) => mb_substr($w, 0, 1), $words));
-    }
-
-    private function isPlayerDone(string $playerId, Round $round, ?int $maxAttempts): bool
-    {
-        $foundTitle = $round->answers()
-            ->where('game_player_id', $playerId)
-            ->where('answer_type', AnswerType::Title->value)
-            ->where('is_correct', true)
-            ->exists();
-
-        $foundArtist = $round->answers()
-            ->where('game_player_id', $playerId)
-            ->where('answer_type', AnswerType::Artist->value)
-            ->where('is_correct', true)
-            ->exists();
-
-        if ($foundTitle && $foundArtist) {
-            return true;
-        }
-
-        if ($maxAttempts !== null) {
-            return $round->answers()
-                ->where('game_player_id', $playerId)
-                ->where('is_correct', false)
-                ->count() >= $maxAttempts;
-        }
-
-        return false;
     }
 }

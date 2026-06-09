@@ -38,6 +38,57 @@
     </div>
 
     {{-- ================================================================== --}}
+    {{-- iOS : déverrouillage audio                                           --}}
+    {{-- iOS bloque autoplay/play() hors d'un geste utilisateur. Ce bouton    --}}
+    {{-- joue un silence dans le geste du tap → la session est "déverrouillée"--}}
+    {{-- et l'autoplay des manches fonctionne ensuite. Placé ici (page de jeu)--}}
+    {{-- car le passage lobby→jeu est un redirect plein (window recréée).     --}}
+    {{-- ================================================================== --}}
+    <div
+        x-data="{
+            isIOS: /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1),
+            unlocked: !! window.__bbAudioUnlocked,
+            get needsUnlock() { return this.isIOS && ! this.unlocked; },
+            async unlock() {
+                try {
+                    const AC = window.AudioContext || window.webkitAudioContext;
+                    if (AC) {
+                        window.__bbAudioCtx = window.__bbAudioCtx || new AC();
+                        if (window.__bbAudioCtx.state === 'suspended') await window.__bbAudioCtx.resume();
+                        const src = window.__bbAudioCtx.createBufferSource();
+                        src.buffer = window.__bbAudioCtx.createBuffer(1, 1, 22050);
+                        src.connect(window.__bbAudioCtx.destination);
+                        src.start(0);
+                    }
+                } catch (e) {}
+                try {
+                    const s = window.__bbSilence || (window.__bbSilence = new Audio('data:audio/wav;base64,UklGRrQBAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YZABAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA='));
+                    s.volume = 0;
+                    await s.play().catch(() => {});
+                } catch (e) {}
+                try {
+                    const a = document.querySelector('audio[x-ref=audio]');
+                    if (a) { a.volume = parseFloat(localStorage.getItem('blindtest_volume') ?? 1); await a.play().catch(() => {}); }
+                } catch (e) {}
+                window.__bbAudioUnlocked = true;
+                this.unlocked = true;
+            },
+        }"
+        x-show="needsUnlock"
+        x-cloak
+    >
+        <button
+            type="button"
+            @click="unlock()"
+            class="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-white shadow-[0_4px_15px_rgba(124,92,191,0.4)] animate-pulse-cta"
+            style="touch-action: manipulation; -webkit-tap-highlight-color: transparent;"
+        >
+            🔊 Activer le son
+        </button>
+        <p class="mt-1.5 text-center text-xs text-muted">iOS bloque le son tant que tu n'as pas tapé ici.</p>
+    </div>
+
+    {{-- ================================================================== --}}
     {{-- STATE: waiting                                                       --}}
     {{-- ================================================================== --}}
     @if ($state === 'waiting')
@@ -163,6 +214,7 @@
                             if ($el.currentTime < $el._lastTime) $el.currentTime = $el._lastTime;
                             $el._lastTime = $el.currentTime;
                         });
+                        $el.play().catch(() => {});
                     "
                 ></audio>
 

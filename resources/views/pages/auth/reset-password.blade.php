@@ -1,54 +1,66 @@
-<x-layouts::auth :title="__('Reset password')">
-    <div class="flex flex-col gap-6">
-        <x-auth-header :title="__('Reset password')" :description="__('Please enter your new password below')" />
-
-        <!-- Session Status -->
-        <x-auth-session-status class="text-center" :status="session('status')" />
-
-        <form method="POST" action="{{ route('password.update') }}" class="flex flex-col gap-6">
-            @csrf
-            <!-- Token -->
-            <input type="hidden" name="token" value="{{ request()->route('token') }}">
-
-            <!-- Email Address -->
-            <flux:input
-                name="email"
-                value="{{ request('email') }}"
-                :label="__('Email')"
-                type="email"
-                required
-                autocomplete="email"
-            />
-
-            <!-- Password -->
-            <flux:input
-                name="password"
-                :label="__('Password')"
-                type="password"
-                required
-                autocomplete="new-password"
-                :placeholder="__('Password')"
-                passwordrules="{{ \Illuminate\Validation\Rules\Password::defaults()->toPasswordRulesString() }}"
-                viewable
-            />
-
-            <!-- Confirm Password -->
-            <flux:input
-                name="password_confirmation"
-                :label="__('Confirm password')"
-                type="password"
-                required
-                autocomplete="new-password"
-                :placeholder="__('Confirm password')"
-                passwordrules="{{ \Illuminate\Validation\Rules\Password::defaults()->toPasswordRulesString() }}"
-                viewable
-            />
-
-            <div class="flex items-center justify-end">
-                <flux:button type="submit" variant="primary" class="w-full" data-test="reset-password-button">
-                    {{ __('Reset password') }}
-                </flux:button>
+<x-layouts::app :title="'Réinitialiser le mot de passe'">
+    <div class="mx-auto max-w-md">
+        <x-card padding="lg">
+            {{-- Logo Frenzy --}}
+            <div class="flex flex-col items-center text-center mb-6">
+                <a href="{{ route('home') }}" class="mb-4 select-none" aria-label="Accueil">
+                    <svg width="52" height="52" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="16" cy="16" r="16" fill="#7c5cbf"/>
+                        <rect x="7" y="14" width="3" height="8" rx="1.5" fill="white" opacity="0.5"/>
+                        <rect x="11.5" y="10" width="3" height="16" rx="1.5" fill="white" opacity="0.85"/>
+                        <rect x="16" y="7" width="3" height="22" rx="1.5" fill="white"/>
+                        <rect x="20.5" y="10" width="3" height="16" rx="1.5" fill="white" opacity="0.85"/>
+                        <circle cx="27" cy="6" r="4" fill="#a8e6cf"/>
+                        <circle cx="27" cy="6" r="2" fill="#4caf82"/>
+                    </svg>
+                </a>
+                <h1 class="font-display text-2xl font-black text-ink">Nouveau mot de passe</h1>
+                <p class="text-muted text-sm mt-1">Choisis un nouveau mot de passe pour ton compte.</p>
             </div>
-        </form>
+
+            @if (session('status'))
+                <div class="mb-5 rounded-xl border border-success/30 bg-success/10 px-4 py-2.5 text-center text-sm font-medium text-success">
+                    {{ session('status') }}
+                </div>
+            @endif
+
+            <form method="POST" action="{{ route('password.update') }}" class="space-y-5">
+                @csrf
+                <input type="hidden" name="token" value="{{ request()->route('token') }}">
+
+                <div>
+                    <label for="email" class="block text-sm font-semibold text-ink mb-1.5">Adresse e-mail</label>
+                    <x-input id="email" name="email" type="email" value="{{ request('email') }}"
+                        required autocomplete="email" placeholder="email@exemple.com" />
+                    @error('email')
+                        <p class="mt-1.5 text-xs font-medium text-error">{{ $message }}</p>
+                    @enderror
+                </div>
+
+                <div>
+                    <label for="password" class="block text-sm font-semibold text-ink mb-1.5">Mot de passe</label>
+                    <x-input id="password" name="password" type="password"
+                        required autocomplete="new-password" placeholder="Nouveau mot de passe"
+                        passwordrules="{{ \Illuminate\Validation\Rules\Password::defaults()->toPasswordRulesString() }}" />
+                    @error('password')
+                        <p class="mt-1.5 text-xs font-medium text-error">{{ $message }}</p>
+                    @enderror
+                </div>
+
+                <div>
+                    <label for="password_confirmation" class="block text-sm font-semibold text-ink mb-1.5">Confirmer le mot de passe</label>
+                    <x-input id="password_confirmation" name="password_confirmation" type="password"
+                        required autocomplete="new-password" placeholder="Confirme ton mot de passe"
+                        passwordrules="{{ \Illuminate\Validation\Rules\Password::defaults()->toPasswordRulesString() }}" />
+                    @error('password_confirmation')
+                        <p class="mt-1.5 text-xs font-medium text-error">{{ $message }}</p>
+                    @enderror
+                </div>
+
+                <x-btn type="submit" size="lg" class="w-full" data-test="reset-password-button">
+                    Réinitialiser le mot de passe
+                </x-btn>
+            </form>
+        </x-card>
     </div>
-</x-layouts::auth>
+</x-layouts::app>

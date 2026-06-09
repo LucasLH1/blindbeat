@@ -25,10 +25,11 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
 
-        $this->app->booted(function () {
-            \Illuminate\Support\Facades\Route::middleware('web')
-                ->post('/broadcasting/auth', [\App\Http\Controllers\BroadcastAuthController::class, 'authenticate']);
-        });
+        // Register channel-authorization callbacks (room.{code}, group.{groupId}, …).
+        // Normally loaded by withRouting(channels:), but that also registers the
+        // framework's /broadcasting/auth route which we replace with our own
+        // guest-aware controller (see bootstrap/app.php + routes/web.php).
+        require base_path('routes/channels.php');
     }
 
     /**
